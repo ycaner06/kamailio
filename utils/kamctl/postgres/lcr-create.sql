@@ -1,4 +1,3 @@
-INSERT INTO version (table_name, table_version) values ('lcr_gw','3');
 CREATE TABLE lcr_gw (
     id SERIAL PRIMARY KEY NOT NULL,
     lcr_id SMALLINT NOT NULL,
@@ -18,7 +17,8 @@ CREATE TABLE lcr_gw (
 
 CREATE INDEX lcr_gw_lcr_id_idx ON lcr_gw (lcr_id);
 
-INSERT INTO version (table_name, table_version) values ('lcr_rule_target','1');
+INSERT INTO version (table_name, table_version) values ('lcr_gw','3');
+
 CREATE TABLE lcr_rule_target (
     id SERIAL PRIMARY KEY NOT NULL,
     lcr_id SMALLINT NOT NULL,
@@ -31,15 +31,19 @@ CREATE TABLE lcr_rule_target (
 
 CREATE INDEX lcr_rule_target_lcr_id_idx ON lcr_rule_target (lcr_id);
 
-INSERT INTO version (table_name, table_version) values ('lcr_rule','2');
+INSERT INTO version (table_name, table_version) values ('lcr_rule_target','1');
+
 CREATE TABLE lcr_rule (
     id SERIAL PRIMARY KEY NOT NULL,
     lcr_id SMALLINT NOT NULL,
     prefix VARCHAR(16) DEFAULT NULL,
     from_uri VARCHAR(64) DEFAULT NULL,
     request_uri VARCHAR(64) DEFAULT NULL,
+    mt_tvalue VARCHAR(128) DEFAULT NULL,
     stopper INTEGER DEFAULT 0 NOT NULL,
     enabled INTEGER DEFAULT 1 NOT NULL,
     CONSTRAINT lcr_rule_lcr_id_prefix_from_uri_idx UNIQUE (lcr_id, prefix, from_uri)
 );
+
+INSERT INTO version (table_name, table_version) values ('lcr_rule','3');
 

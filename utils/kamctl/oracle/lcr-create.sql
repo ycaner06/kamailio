@@ -1,4 +1,3 @@
-INSERT INTO version (table_name, table_version) values ('lcr_gw','3');
 CREATE TABLE lcr_gw (
     id NUMBER(10) PRIMARY KEY,
     lcr_id NUMBER(5),
@@ -26,7 +25,8 @@ BEGIN map2users('lcr_gw'); END;
 /
 CREATE INDEX lcr_gw_lcr_id_idx  ON lcr_gw (lcr_id);
 
-INSERT INTO version (table_name, table_version) values ('lcr_rule_target','1');
+INSERT INTO version (table_name, table_version) values ('lcr_gw','3');
+
 CREATE TABLE lcr_rule_target (
     id NUMBER(10) PRIMARY KEY,
     lcr_id NUMBER(5),
@@ -47,13 +47,15 @@ BEGIN map2users('lcr_rule_target'); END;
 /
 CREATE INDEX lcr_rule_target_lcr_id_idx  ON lcr_rule_target (lcr_id);
 
-INSERT INTO version (table_name, table_version) values ('lcr_rule','2');
+INSERT INTO version (table_name, table_version) values ('lcr_rule_target','1');
+
 CREATE TABLE lcr_rule (
     id NUMBER(10) PRIMARY KEY,
     lcr_id NUMBER(5),
     prefix VARCHAR2(16) DEFAULT NULL,
     from_uri VARCHAR2(64) DEFAULT NULL,
     request_uri VARCHAR2(64) DEFAULT NULL,
+    mt_tvalue VARCHAR2(128) DEFAULT NULL,
     stopper NUMBER(10) DEFAULT 0 NOT NULL,
     enabled NUMBER(10) DEFAULT 1 NOT NULL,
     CONSTRAINT ORA_lcr_id_prefix_from_uri_idx  UNIQUE (lcr_id, prefix, from_uri)
@@ -67,3 +69,5 @@ END lcr_rule_tr;
 /
 BEGIN map2users('lcr_rule'); END;
 /
+INSERT INTO version (table_name, table_version) values ('lcr_rule','3');
+

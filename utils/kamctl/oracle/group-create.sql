@@ -1,10 +1,9 @@
-INSERT INTO version (table_name, table_version) values ('grp','2');
 CREATE TABLE grp (
     id NUMBER(10) PRIMARY KEY,
     username VARCHAR2(64) DEFAULT '',
     domain VARCHAR2(64) DEFAULT '',
     grp VARCHAR2(64) DEFAULT '',
-    last_modified DATE DEFAULT to_date('1900-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
+    last_modified DATE DEFAULT to_date('2000-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
     CONSTRAINT grp_account_group_idx  UNIQUE (username, domain, grp)
 );
 
@@ -16,7 +15,8 @@ END grp_tr;
 /
 BEGIN map2users('grp'); END;
 /
-INSERT INTO version (table_name, table_version) values ('re_grp','1');
+INSERT INTO version (table_name, table_version) values ('grp','2');
+
 CREATE TABLE re_grp (
     id NUMBER(10) PRIMARY KEY,
     reg_exp VARCHAR2(128) DEFAULT '',
@@ -32,4 +32,6 @@ END re_grp_tr;
 BEGIN map2users('re_grp'); END;
 /
 CREATE INDEX re_grp_group_idx  ON re_grp (group_id);
+
+INSERT INTO version (table_name, table_version) values ('re_grp','1');
 

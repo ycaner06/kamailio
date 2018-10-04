@@ -1,17 +1,16 @@
-INSERT INTO version (table_name, table_version) values ('location','8');
 CREATE TABLE location (
     id NUMBER(10) PRIMARY KEY,
     ruid VARCHAR2(64) DEFAULT '',
     username VARCHAR2(64) DEFAULT '',
     domain VARCHAR2(64) DEFAULT NULL,
-    contact VARCHAR2(255) DEFAULT '',
+    contact VARCHAR2(512) DEFAULT '',
     received VARCHAR2(128) DEFAULT NULL,
     path VARCHAR2(512) DEFAULT NULL,
     expires DATE DEFAULT to_date('2030-05-28 21:32:15','yyyy-mm-dd hh24:mi:ss'),
     q NUMBER(10,2) DEFAULT 1.0 NOT NULL,
     callid VARCHAR2(255) DEFAULT 'Default-Call-ID',
     cseq NUMBER(10) DEFAULT 1 NOT NULL,
-    last_modified DATE DEFAULT to_date('1900-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
+    last_modified DATE DEFAULT to_date('2000-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
     flags NUMBER(10) DEFAULT 0 NOT NULL,
     cflags NUMBER(10) DEFAULT 0 NOT NULL,
     user_agent VARCHAR2(255) DEFAULT '',
@@ -36,8 +35,10 @@ BEGIN map2users('location'); END;
 /
 CREATE INDEX location_account_contact_idx  ON location (username, domain, contact);
 CREATE INDEX location_expires_idx  ON location (expires);
+CREATE INDEX location_connection_idx  ON location (server_id, connection_id);
 
-INSERT INTO version (table_name, table_version) values ('location_attrs','1');
+INSERT INTO version (table_name, table_version) values ('location','9');
+
 CREATE TABLE location_attrs (
     id NUMBER(10) PRIMARY KEY,
     ruid VARCHAR2(64) DEFAULT '',
@@ -46,7 +47,7 @@ CREATE TABLE location_attrs (
     aname VARCHAR2(64) DEFAULT '',
     atype NUMBER(10) DEFAULT 0 NOT NULL,
     avalue VARCHAR2(255) DEFAULT '',
-    last_modified DATE DEFAULT to_date('1900-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss')
+    last_modified DATE DEFAULT to_date('2000-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss')
 );
 
 CREATE OR REPLACE TRIGGER location_attrs_tr
@@ -59,4 +60,6 @@ BEGIN map2users('location_attrs'); END;
 /
 CREATE INDEX ORA_account_record_idx  ON location_attrs (username, domain, ruid);
 CREATE INDEX ORA_last_modified_idx  ON location_attrs (last_modified);
+
+INSERT INTO version (table_name, table_version) values ('location_attrs','1');
 

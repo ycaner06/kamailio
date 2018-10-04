@@ -1,4 +1,3 @@
-INSERT INTO version (table_name, table_version) values ('aliases','8');
 CREATE TABLE `aliases` (
     `id` INT(10) UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL,
     `ruid` VARCHAR(64) DEFAULT '' NOT NULL,
@@ -11,7 +10,7 @@ CREATE TABLE `aliases` (
     `q` FLOAT(10,2) DEFAULT 1.0 NOT NULL,
     `callid` VARCHAR(255) DEFAULT 'Default-Call-ID' NOT NULL,
     `cseq` INT(11) DEFAULT 1 NOT NULL,
-    `last_modified` DATETIME DEFAULT '1900-01-01 00:00:01' NOT NULL,
+    `last_modified` DATETIME DEFAULT '2000-01-01 00:00:01' NOT NULL,
     `flags` INT(11) DEFAULT 0 NOT NULL,
     `cflags` INT(11) DEFAULT 0 NOT NULL,
     `user_agent` VARCHAR(255) DEFAULT '' NOT NULL,
@@ -28,4 +27,6 @@ CREATE TABLE `aliases` (
 
 CREATE INDEX account_contact_idx ON aliases (`username`, `domain`, `contact`);
 CREATE INDEX expires_idx ON aliases (`expires`);
+
+INSERT INTO version (table_name, table_version) values ('aliases','8');
 

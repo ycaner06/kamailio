@@ -1,4 +1,3 @@
-INSERT INTO version (table_name, table_version) values ('aliases','8');
 CREATE TABLE aliases (
     id NUMBER(10) PRIMARY KEY,
     ruid VARCHAR2(64) DEFAULT '',
@@ -11,7 +10,7 @@ CREATE TABLE aliases (
     q NUMBER(10,2) DEFAULT 1.0 NOT NULL,
     callid VARCHAR2(255) DEFAULT 'Default-Call-ID',
     cseq NUMBER(10) DEFAULT 1 NOT NULL,
-    last_modified DATE DEFAULT to_date('1900-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
+    last_modified DATE DEFAULT to_date('2000-01-01 00:00:01','yyyy-mm-dd hh24:mi:ss'),
     flags NUMBER(10) DEFAULT 0 NOT NULL,
     cflags NUMBER(10) DEFAULT 0 NOT NULL,
     user_agent VARCHAR2(255) DEFAULT '',
@@ -36,4 +35,6 @@ BEGIN map2users('aliases'); END;
 /
 CREATE INDEX aliases_account_contact_idx  ON aliases (username, domain, contact);
 CREATE INDEX aliases_expires_idx  ON aliases (expires);
+
+INSERT INTO version (table_name, table_version) values ('aliases','8');
 

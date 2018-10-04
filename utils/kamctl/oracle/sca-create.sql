@@ -1,4 +1,3 @@
-INSERT INTO version (table_name, table_version) values ('sca_subscriptions','1');
 CREATE TABLE sca_subscriptions (
     id NUMBER(10) PRIMARY KEY,
     subscriber VARCHAR2(255),
@@ -13,6 +12,7 @@ CREATE TABLE sca_subscriptions (
     record_route CLOB,
     notify_cseq NUMBER(10),
     subscribe_cseq NUMBER(10),
+    server_id NUMBER(10) DEFAULT 0 NOT NULL,
     CONSTRAINT ORA_sca_subscriptions_idx  UNIQUE (subscriber, call_id, from_tag, to_tag)
 );
 
@@ -24,6 +24,8 @@ END sca_subscriptions_tr;
 /
 BEGIN map2users('sca_subscriptions'); END;
 /
-CREATE INDEX ORA_sca_expires_idx  ON sca_subscriptions (expires);
+CREATE INDEX ORA_sca_expires_idx  ON sca_subscriptions (server_id, expires);
 CREATE INDEX ORA_sca_subscribers_idx  ON sca_subscriptions (subscriber, event);
+
+INSERT INTO version (table_name, table_version) values ('sca_subscriptions','2');
 
