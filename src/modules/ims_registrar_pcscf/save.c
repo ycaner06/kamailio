@@ -3,23 +3,23 @@
  *
  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
  * Copyright (C) 2012 Smile Communications, richard.good@smilecoms.com
- * 
+ *
  * The initial version of this code was written by Dragos Vingarzan
  * (dragos(dot)vingarzan(at)fokus(dot)fraunhofer(dot)de and the
  * Fruanhofer Institute. It was and still is maintained in a separate
  * branch of the original SER. We are therefore migrating it to
  * Kamailio/SR and look forward to maintaining it from here on out.
  * 2011/2012 Smile Communications, Pty. Ltd.
- * ported/maintained/improved by 
+ * ported/maintained/improved by
  * Jason Penton (jason(dot)penton(at)smilecoms.com and
- * Richard Good (richard(dot)good(at)smilecoms.com) as part of an 
+ * Richard Good (richard(dot)good(at)smilecoms.com) as part of an
  * effort to add full IMS support to Kamailio/SR using a new and
  * improved architecture
- * 
+ *
  * NB: Alot of this code was originally part of OpenIMSCore,
- * FhG Fokus. 
+ * FhG Fokus.
  * Copyright (C) 2004-2006 FhG Fokus
- * Thanks for great work! This is an effort to 
+ * Thanks for great work! This is an effort to
  * break apart the various CSCF functions into logically separate
  * components. We hope this will drive wider use. We also feel
  * that in this way the architecture is more complete and thereby easier
@@ -37,10 +37,10 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
- * 
+ *
  */
 
 #include "../../core/parser/contact/contact.h"
@@ -153,7 +153,7 @@ static inline int update_contacts(struct sip_msg *req,struct sip_msg *rpl, udoma
 				ci.service_routes = service_route;
 				ci.num_service_routes = service_route_cnt;
 				ci.reg_state = PCONTACT_REGISTERED|PCONTACT_REG_PENDING|PCONTACT_REG_PENDING_AAR;   //we don't want to add contacts that did not come through us (pcscf)
-				
+
 				ci.received_host.len = 0;
 				ci.received_host.s = 0;
 				ci.received_port = 0;
@@ -182,7 +182,7 @@ static inline int update_contacts(struct sip_msg *req,struct sip_msg *rpl, udoma
 							memcpy(portbuf, port_s, (p-port_s));
 							port = atoi(portbuf);
 							LM_DBG("alias(port) [%d]\n", port);
-							
+
 							proto_s = p + 1;
 							memset(portbuf, 0, 5);
 							memcpy(portbuf, proto_s, 1);
@@ -193,15 +193,15 @@ static inline int update_contacts(struct sip_msg *req,struct sip_msg *rpl, udoma
 							ci.searchflag = SEARCH_RECEIVED;
 						}
 					}
-				} 
-				
+				}
+
 				ul.lock_udomain(_d, &puri.host, port, puri.proto);
 				if (ul.get_pcontact(_d, &ci, &pcontact) != 0) { //need to insert new contact
 					if ((expires-local_time_now)<=0) { //remove contact - de-register
 						LM_DBG("This is a de-registration for contact <%.*s> but contact is not in usrloc - ignore\n", c->uri.len, c->uri.s);
 						goto next_contact;
-					} 
-				    
+					}
+
                                         LM_DBG("We don't add contact from the 200OK that did not go through us (ie, not present in explicit REGISTER that went through us\n");
 //					LM_DBG("Adding pcontact: <%.*s>, expires: %d which is in %d seconds\n", c->uri.len, c->uri.s, expires, expires-local_time_now);
 //					ci.reg_state = PCONTACT_REGISTERED;
@@ -258,7 +258,7 @@ int save_pending(struct sip_msg* _m, udomain_t* _d) {
 	char srcip[50];
 
 	memset(&ci, 0, sizeof(struct pcontact_info));
-        
+
         vb = cscf_get_ue_via(_m);
         port = vb->port?vb->port:5060;
         proto = vb->proto;
@@ -268,7 +268,7 @@ int save_pending(struct sip_msg* _m, udomain_t* _d) {
 		LM_ERR("No contact headers\n");
 		goto error;
 	}
-        
+
         c = cb->contacts;
 	//TODO: need support for multiple contacts - currently assume one contact
 	//make sure this is not a de-registration
@@ -283,7 +283,7 @@ int save_pending(struct sip_msg* _m, udomain_t* _d) {
 			return 1;
 		}
 	}
-        
+
 	pcscf_act_time();
 	int local_time_now = time_now;
 	int expires = calc_contact_expires(c, expires_hdr, local_time_now);
@@ -327,7 +327,7 @@ int save_pending(struct sip_msg* _m, udomain_t* _d) {
 		ci.received_host.s = srcip;
 		ci.received_port = _m->rcv.src_port;
 		ci.received_proto = _m->rcv.proto;
-                
+
 	}
 	// Set to default, if not set:
 	if (ci.received_port == 0)
@@ -387,7 +387,9 @@ int save(struct sip_msg* _m, udomain_t* _d, int _cflags) {
 	str *service_routes=0;
 	int num_service_routes = 0;
 	pv_elem_t *presentity_uri_pv;
-	
+	int contact_has_sos=-1;
+	contact_t* chi; //contact header information
+	struct hdr_field* h;
 	//get request from reply
 	req = get_request_from_reply(_m);
 	if (!req) {
@@ -395,13 +397,35 @@ int save(struct sip_msg* _m, udomain_t* _d, int _cflags) {
 		goto error;
 	}
 	expires_hdr = cscf_get_expires_hdr(_m, 0);
-	cb = cscf_parse_contacts(_m);
+
+	if((parse_headers(_m, HDR_CONTACT_F, 0) == -1) || !_m->contact) {
+		LM_ERR("cannot get the Contact header from the SIP message in saving action in PCSCF\n");
+		goto error;
+	}
+
+	if(!_m->contact->parsed && parse_contact(_m->contact) < 0) {
+		LM_ERR("Couldn t parse Contact Header \n");
+		goto error;
+	}
+
+	cb = ((contact_body_t *)_m->contact->parsed);
 	if (!cb || (!cb->contacts && !cb->star)) {
-		LM_DBG("No contact headers and not *\n");
+		LM_DBG("No contact headers and not star\n");
 		goto error;
 	}
 	cscf_get_p_associated_uri(_m, &public_ids, &num_public_ids, 1);
 	service_routes = cscf_get_service_route(_m, &num_service_routes, 1);
+
+	for (h = _m->contact; h; h = h->next) {
+	 if (h->type == HDR_CONTACT_T && h->parsed) {
+	    for (chi = ((contact_body_t*) h->parsed)->contacts; chi; chi = chi->next) {
+	      contact_has_sos = cscf_get_sos_uri_param(chi->uri);
+	      if(contact_has_sos!=-1){
+	        break;
+	      }
+	    }
+	  }
+	}
 
 	//update contacts
 	if (!update_contacts(req, _m, _d, cb->star, expires_hdr, public_ids, num_public_ids, service_routes, num_service_routes, 0)) {
@@ -409,8 +433,8 @@ int save(struct sip_msg* _m, udomain_t* _d, int _cflags) {
 		goto error;
 	}
 
-	if(subscribe_to_reginfo == 1){
-	    
+	if(subscribe_to_reginfo == 1 && contact_has_sos < 1){
+
 	    //use the first p_associated_uri - i.e. the default IMPU
 	    LM_DBG("Subscribe to reg event for primary p_associated_uri");
 	    if(num_public_ids > 0){
@@ -442,12 +466,12 @@ int save(struct sip_msg* _m, udomain_t* _d, int _cflags) {
         //Now some how check if there is a pua record and what the presentity uri is from there - if nothing there
 		LM_DBG("No p_associated_uri in 200 OK this must be a de-register - we ignore this - will unsubscribe when the notify is received");
 		goto done;
-		
+
 	    }
 	    reginfo_subscribe_real(_m, presentity_uri_pv, service_routes, subscription_expires);
 	    pv_elem_free_all(presentity_uri_pv);
 	}
-    
+
 done:
 	if (public_ids && public_ids->s) pkg_free(public_ids);
 	if (service_routes && service_routes->s) pkg_free(service_routes);
