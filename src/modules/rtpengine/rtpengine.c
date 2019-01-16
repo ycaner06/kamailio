@@ -169,6 +169,16 @@ struct minmax_stats_vals {
 	long long avg_samples; /* our own running count to average the averages */
 };
 
+#define RTPE_LIST_VERSION_DELAY	10
+
+typedef struct rtpe_list_version {
+	int vernum;
+	time_t vertime;
+} rtpe_list_version_t;
+
+static rtpe_list_version_t *_rtpe_list_version = NULL;
+static int _rtpe_list_vernum_local = 0;
+
 static char *gencookie();
 static int rtpp_test(struct rtpp_node*, int, int);
 static int start_recording_f(struct sip_msg *, char *, char *);
@@ -193,7 +203,7 @@ static struct rtpp_node *select_rtpp_node_new(str, str, int, struct rtpp_node **
 static struct rtpp_node *select_rtpp_node_old(str, str, int, enum rtpe_operation);
 static struct rtpp_node *select_rtpp_node(str, str, int, struct rtpp_node **, int, enum rtpe_operation);
 static int is_queried_node(struct rtpp_node *, struct rtpp_node **, int);
-static int build_rtpp_socks();
+static int build_rtpp_socks(int lmode, int rtest);
 static char *send_rtpp_command(struct rtpp_node *, bencode_item_t *, int *);
 static int get_extra_id(struct sip_msg* msg, str *id_str);
 
@@ -218,7 +228,7 @@ static int pv_parse_var(str *inp, pv_elem_t **outp, int *got_any);
 static int mos_label_stats_parse(struct minmax_mos_label_stats *mmls);
 static void parse_call_stats(bencode_item_t *, struct sip_msg *);
 
-static int control_cmd_tos = -1; 
+static int control_cmd_tos = -1;
 static int rtpengine_allow_op = 0;
 static struct rtpp_node **queried_nodes_ptr = NULL;
 static pid_t mypid;
@@ -281,7 +291,6 @@ static struct minmax_mos_label_stats global_mos_stats,
 				     side_A_mos_stats,
 				     side_B_mos_stats;
 int got_any_mos_pvs;
-
 
 
 static cmd_export_t cmds[] = {
@@ -375,7 +384,7 @@ static param_export_t params[] = {
 	{"queried_nodes_limit",   INT_PARAM, &default_rtpengine_cfg.queried_nodes_limit    },
 	{"rtpengine_tout_ms",     INT_PARAM, &default_rtpengine_cfg.rtpengine_tout_ms      },
 	{"rtpengine_allow_op",    INT_PARAM, &rtpengine_allow_op     },
-	{"control_cmd_tos",       INT_PARAM, &control_cmd_tos        }, 
+	{"control_cmd_tos",       INT_PARAM, &control_cmd_tos        },
 	{"db_url",                PARAM_STR, &rtpp_db_url            },
 	{"table_name",            PARAM_STR, &rtpp_table_name        },
 	{"setid_col",             PARAM_STR, &rtpp_setid_col         },
@@ -699,6 +708,9 @@ static inline int str_prefix(const str *p, const char *q, str *out) {
 /* handle either "foo-bar" or "foo=bar" from flags */
 static inline int str_key_val_prefix(const str *p, const char *q, const str *v, str *out) {
 	if (str_eq(p, q)) {
+		if(!v->s || !v->len)
+			return 0;
+
 		*out = *v;
 		return 1;
 	}
@@ -1166,11 +1178,25 @@ error:
 
 static void rtpengine_rpc_reload(rpc_t* rpc, void* ctx)
 {
+	time_t tnow;
+
 	if (rtpp_db_url.s == NULL) {
 		// no database
 		rpc->fault(ctx, 500, "No Database URL");
 		return;
 	}
+
+	if(!sr_instance_ready()) {
+		rpc->fault(ctx, 500, "Initializing - try later");
+		return;
+	}
+
+	tnow = time(NULL);
+	if(tnow - _rtpe_list_version->vertime < RTPE_LIST_VERSION_DELAY) {
+		rpc->fault(ctx, 500, "Too short reload interval - try later");
+		return;
+	}
+	_rtpe_list_version->vertime = tnow;
 
 	if (init_rtpproxy_db() < 0) {
 		// fail reloading from database
@@ -1178,10 +1204,16 @@ static void rtpengine_rpc_reload(rpc_t* rpc, void* ctx)
 		return;
 	}
 
-	if (build_rtpp_socks()) {
-		rpc->fault(ctx, 500, "Out of memory");
+	if (build_rtpp_socks(1, 1)) {
+		rpc->fault(ctx, 500, "Failed to build rtpengine sockets");
 		return;
 	}
+
+	_rtpe_list_version->vernum += 1;
+	_rtpe_list_version->vertime = time(NULL);
+	LM_DBG("current rtpengines list version: %d (%u)\n",
+			_rtpe_list_version->vernum,
+			(unsigned int)_rtpe_list_version->vertime);
 }
 
 static int rtpengine_rpc_iterate(rpc_t* rpc, void* ctx, const str *rtpp_url,
@@ -1192,7 +1224,12 @@ static int rtpengine_rpc_iterate(rpc_t* rpc, void* ctx, const str *rtpp_url,
 	int found = RPC_FOUND_NONE, err = 0;
 	int ret;
 
-	if (build_rtpp_socks()) {
+	if(!sr_instance_ready()) {
+		rpc->fault(ctx, 500, "Initializing - try later");
+		return -1;
+	}
+
+	if (build_rtpp_socks(1, 1)) {
 		rpc->fault(ctx, 500, "Out of memory");
 		return -1;
 	}
@@ -1461,6 +1498,14 @@ mod_init(void)
 	unsigned short avp_flags;
 	str s;
 
+	_rtpe_list_version = (rtpe_list_version_t*)shm_mallocxz(sizeof(rtpe_list_version_t));
+	if(_rtpe_list_version==NULL) {
+		LM_ERR("no more shm memory for rtpe list version\n");
+		return -1;
+	}
+	_rtpe_list_version->vernum = 1;
+	_rtpe_list_version->vertime = time(NULL);
+
 	if(rtpengine_rpc_init()<0)
 	{
 		LM_ERR("failed to register RPC commands\n");
@@ -1630,7 +1675,20 @@ mod_init(void)
 	return 0;
 }
 
-static int build_rtpp_socks() {
+#define rtpe_reload_lock_get(plock) do { \
+	if (rtpp_db_url.s != NULL && lmode != 0) lock_get(plock); \
+} while(0)
+
+#define rtpe_reload_lock_release(plock) do { \
+	if (rtpp_db_url.s != NULL && lmode != 0) lock_release(plock); \
+} while(0)
+
+/**
+ * build rtp enigne sockets
+ * - lmode: locking mode (1 - lock if needed; 0 - no locking)
+ * - rtest: rtpengine testing (1 - test if active; 0 - no test done)
+ */
+static int build_rtpp_socks(int lmode, int rtest) {
 	int n, i;
 	char *cp;
 	struct addrinfo hints, *res;
@@ -1641,12 +1699,14 @@ static int build_rtpp_socks() {
 	int ip_mtu_discover = IP_PMTUDISC_DONT;
 #endif
 
-	lock_get(rtpp_no_lock);
-	current_rtpp_no = *rtpp_no;
-	lock_release(rtpp_no_lock);
-
-	if (current_rtpp_no == rtpp_socks_size)
+	if(_rtpe_list_vernum_local == _rtpe_list_version->vernum) {
+		/* same version for the list of rtpengines */
 		return 0;
+	}
+
+	rtpe_reload_lock_get(rtpp_no_lock);
+	current_rtpp_no = *rtpp_no;
+	rtpe_reload_lock_release(rtpp_no_lock);
 
 	// close current sockets
 	for (i = 0; i < rtpp_socks_size; i++) {
@@ -1664,11 +1724,12 @@ static int build_rtpp_socks() {
 	}
 	memset(rtpp_socks, -1, sizeof(int)*(rtpp_socks_size));
 
-	lock_get(rtpp_set_list->rset_head_lock);
+	rtpe_reload_lock_get(rtpp_set_list->rset_head_lock);
+	_rtpe_list_vernum_local = _rtpe_list_version->vernum;
 	for (rtpp_list = rtpp_set_list->rset_first; rtpp_list != 0;
 		rtpp_list = rtpp_list->rset_next) {
 
-		lock_get(rtpp_list->rset_lock);
+		rtpe_reload_lock_get(rtpp_list->rset_lock);
 		for (pnode=rtpp_list->rn_first; pnode!=0; pnode = pnode->rn_next) {
 			char *hostname;
 
@@ -1757,11 +1818,11 @@ static int build_rtpp_socks() {
 
 			freeaddrinfo(res);
 rptest:
-			pnode->rn_disabled = rtpp_test(pnode, 0, 1);
+			if(rtest) pnode->rn_disabled = rtpp_test(pnode, 0, 1);
 		}
-		lock_release(rtpp_list->rset_lock);
+		rtpe_reload_lock_release(rtpp_list->rset_lock);
 	}
-	lock_release(rtpp_set_list->rset_head_lock);
+	rtpe_reload_lock_release(rtpp_set_list->rset_head_lock);
 
 	return 0;
 }
@@ -1837,8 +1898,14 @@ child_init(int rank)
 	memset(queried_nodes_ptr, 0, MAX_RTPP_TRIED_NODES * sizeof(struct rtpp_node*));
 
 	/* Iterate known RTP proxies - create sockets */
-	if (build_rtpp_socks())
-		return -1;
+	if(rank==PROC_SIPINIT) {
+		/* probe rtpengines only in first worker */
+		if (build_rtpp_socks(0, 1))
+			return -1;
+	} else {
+		if (build_rtpp_socks(0, 0))
+			return -1;
+	}
 
 	return 0;
 }
@@ -1916,6 +1983,10 @@ static void mod_destroy(void)
 		LM_ERR("rtpengine_hash_table_destroy() failed!\n");
 	} else {
 		LM_DBG("rtpengine_hash_table_destroy() success!\n");
+	}
+	if(_rtpe_list_version!=NULL) {
+		shm_free(_rtpe_list_version);
+		_rtpe_list_version = NULL;
 	}
 }
 
@@ -2630,7 +2701,7 @@ send_rtpp_command(struct rtpp_node *node, bencode_item_t *dict, int *outlen)
 		}
 		v[0].iov_base = gencookie();
 		v[0].iov_len = strlen(v[0].iov_base);
-        rtpengine_retr = cfg_get(rtpengine,rtpengine_cfg,rtpengine_retr);
+		rtpengine_retr = cfg_get(rtpengine,rtpengine_cfg,rtpengine_retr);
 		for (i = 0; i < rtpengine_retr; i++) {
 			do {
 				len = writev(rtpp_socks[node->idx], v, vcnt + 1);
@@ -2640,14 +2711,14 @@ send_rtpp_command(struct rtpp_node *node, bencode_item_t *dict, int *outlen)
 				LM_ERR("can't send command \"%.*s\" to RTP proxy <%s>\n", out.len, out.s, node->rn_url.s);
 				goto badproxy;
 			}
-            rtpengine_tout_ms = cfg_get(rtpengine,rtpengine_cfg,rtpengine_tout_ms);
+			rtpengine_tout_ms = cfg_get(rtpengine,rtpengine_cfg,rtpengine_tout_ms);
 			while ((poll(fds, 1, rtpengine_tout_ms) == 1) &&
 				(fds[0].revents & POLLIN) != 0) {
 				do {
 					len = recv(rtpp_socks[node->idx], buf, sizeof(buf)-1, 0);
 				} while (len == -1 && errno == EINTR);
 				if (len <= 0) {
-					LM_ERR("can't read reply from RTP proxy <%s>\n", node->rn_url.s);
+					LM_ERR("can't read reply for command \"%.*s\" from RTP proxy <%s>\n", out.len, out.s, node->rn_url.s);
 					goto badproxy;
 				}
 				if (len >= (v[0].iov_len - 1) &&
@@ -2664,7 +2735,7 @@ send_rtpp_command(struct rtpp_node *node, bencode_item_t *dict, int *outlen)
 			}
 		}
 		if (i == rtpengine_retr) {
-			LM_ERR("timeout waiting reply from RTP proxy <%s>\n", node->rn_url.s);
+			LM_ERR("timeout waiting reply for command \"%.*s\" from RTP proxy <%s>\n", out.len, out.s, node->rn_url.s);
 			goto badproxy;
 		}
 	}
@@ -2854,7 +2925,7 @@ select_rtpp_node(str callid, str viabranch, int do_test, struct rtpp_node **quer
 {
 	struct rtpp_node *node = NULL;
 
-	if (build_rtpp_socks()) {
+	if (build_rtpp_socks(1, 0)) {
 		LM_ERR("out of memory\n");
 		return NULL;
 	}
@@ -3772,6 +3843,16 @@ static int ki_rtpengine_delete(sip_msg_t *msg, str *flags)
 	return rtpengine_rtpp_set_wrap(msg, rtpengine_delete_wrap, flags->s, 1);
 }
 
+static int ki_rtpengine_query0(sip_msg_t *msg)
+{       
+        return rtpengine_rtpp_set_wrap(msg, rtpengine_query_wrap, NULL, 1);
+}
+
+static int ki_rtpengine_query(sip_msg_t *msg, str *flags)
+{       
+        return rtpengine_rtpp_set_wrap(msg, rtpengine_query_wrap, flags->s, 1);
+}
+
 static int ki_start_recording(sip_msg_t *msg)
 {
 	return rtpengine_rtpp_set_wrap(msg, rtpengine_start_recording_wrap, NULL, 1);
@@ -3904,6 +3985,16 @@ static sr_kemi_t sr_kemi_rtpengine_exports[] = {
     { str_init("rtpengine"), str_init("set_rtpengine_set2"),
         SR_KEMIP_INT, ki_set_rtpengine_set2,
         { SR_KEMIP_INT, SR_KEMIP_INT, SR_KEMIP_NONE,
+            SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+    },
+    { str_init("rtpengine"), str_init("rtpengine_query0"),
+        SR_KEMIP_INT, ki_rtpengine_query0,
+        { SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+            SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+    },
+    { str_init("rtpengine"), str_init("rtpengine_query"),
+        SR_KEMIP_INT, ki_rtpengine_query,
+        { SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
             SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
     },
 

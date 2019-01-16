@@ -171,7 +171,7 @@ static int lua_sr_modf (lua_State *L)
 			argv[i] = (char*)pkg_malloc(strlen(luav[i])+1);
 			if(argv[i]==NULL)
 			{
-				LM_ERR("no more pkg\n");
+				PKG_MEM_ERROR;
 				goto error;
 			}
 			strcpy(argv[i], luav[i]);
@@ -743,7 +743,7 @@ static int lua_sr_hdr_append (lua_State *L)
 	hdr = (char*)pkg_malloc(len+1);
 	if(hdr==NULL)
 	{
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memcpy(hdr, txt, len);
@@ -829,7 +829,7 @@ static int lua_sr_hdr_insert (lua_State *L)
 	hdr = (char*)pkg_malloc(len+1);
 	if(hdr==NULL)
 	{
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memcpy(hdr, txt, len);
@@ -1853,6 +1853,16 @@ int sr_kemi_lua_exec_func_ex(lua_State* L, sr_kemi_t *ket, int pdelta)
 						&vps[0].s, &vps[1].s, &vps[2].s, &vps[3].s,
 						&vps[4].s);
 				return sr_kemi_lua_return_int(L, ket, ret);
+			} else if(ket->ptypes[0]==SR_KEMIP_STR
+					&& ket->ptypes[1]==SR_KEMIP_STR
+					&& ket->ptypes[2]==SR_KEMIP_INT
+					&& ket->ptypes[3]==SR_KEMIP_INT
+					&& ket->ptypes[4]==SR_KEMIP_STR) {
+				ret = ((sr_kemi_fmssnns_f)(ket->func))(env_L->msg,
+						&vps[0].s, &vps[1].s, vps[2].n, vps[3].n,
+						&vps[4].s);
+				return sr_kemi_lua_return_int(L, ket, ret);
+
 			} else {
 				LM_ERR("invalid parameters for: %.*s\n",
 						fname->len, fname->s);

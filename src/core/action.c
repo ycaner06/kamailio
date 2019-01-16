@@ -752,7 +752,7 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 					len=strlen(a->val[0].u.string);
 					msg->new_uri.s=pkg_malloc(len+1);
 					if (msg->new_uri.s==0){
-						LM_ERR("memory allocation failure\n");
+						PKG_MEM_ERROR;
 						ret=E_OUT_OF_MEM;
 						goto error;
 					}
@@ -802,7 +802,7 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 
 				new_uri=pkg_malloc(MAX_URI_SIZE);
 				if (new_uri==0){
-					LM_ERR("memory allocation failure\n");
+					PKG_MEM_ERROR;
 					ret=E_OUT_OF_MEM;
 					goto error;
 				}
@@ -1670,6 +1670,9 @@ int run_child_one_init_route(void)
 		rt = route_get(&event_rt, evname.s);
 	}
 	if((keng!=NULL) || (rt>=0 && event_rt.rlist[rt]!=NULL)) {
+		if (cfg_child_init()) {
+			return -1;
+		}
 		LM_DBG("executing event_route[%s] (%d)\n", evname.s, rt);
 		if(faked_msg_init()<0)
 			return -1;

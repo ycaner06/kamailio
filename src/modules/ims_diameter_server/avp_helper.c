@@ -200,6 +200,10 @@ int pv_get_request(struct sip_msg *msg, pv_param_t *param, pv_value_t *res) {
  */
 int diameterserver_add_avp(AAAMessage *m, char *d, int len, int avp_code, int flags, int vendorid, int data_do, const char *func) {
     AAA_AVP *avp;
+	if(m==NULL) {
+		LM_ERR("invalid diamemter message parameter\n");
+		return 0;
+	}
     if (vendorid != 0) flags |= AAA_AVP_FLAG_VENDOR_SPECIFIC;
     avp = cdpb.AAACreateAVP(avp_code, flags, vendorid, d, len, data_do);
     if (!avp) {
@@ -338,8 +342,17 @@ void parselist(AAAMessage *response, AAA_AVP_LIST *list, cJSON * item, int level
 		avp_list_s = cdpb.AAAGroupAVPS(avp_list);
 		cdpb.AAAFreeAVPList(&avp_list);
 
-		diameterserver_add_avp(response, avp_list_s.s, avp_list_s.len, cJSON_GetObjectItem(item,"avpCode")->valueint, flags,
-		  cJSON_GetObjectItem(item,"vendorId")->valueint, AVP_FREE_DATA, __FUNCTION__);
+		if(list) {
+			diameterserver_add_avp_list(list, avp_list_s.s, avp_list_s.len,
+					cJSON_GetObjectItem(item, "avpCode")->valueint, flags,
+					cJSON_GetObjectItem(item, "vendorId")->valueint, AVP_FREE_DATA,
+					__FUNCTION__);
+		} else {
+			diameterserver_add_avp(response, avp_list_s.s, avp_list_s.len,
+					cJSON_GetObjectItem(item, "avpCode")->valueint, flags,
+					cJSON_GetObjectItem(item, "vendorId")->valueint, AVP_FREE_DATA,
+					__FUNCTION__);
+		}
 	} else if (cJSON_GetObjectItem(item,"int32")) {
 		set_4bytes(x, cJSON_GetObjectItem(item,"int32")->valueint);
 		if (list) {

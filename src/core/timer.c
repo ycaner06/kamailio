@@ -43,9 +43,7 @@
 */
 #include "globals.h"
 #include "mem/mem.h"
-#ifdef SHM_MEM
 #include "mem/shm_mem.h"
-#endif
 #include "locking.h"
 #include "sched_yield.h"
 #include "cfg/cfg_struct.h"
@@ -149,19 +147,11 @@ void destroy_timer()
 		timer_lock=0;
 	}
 	if (ticks){
-#ifdef SHM_MEM
 		shm_free(ticks);
-#else
-		pkg_free(ticks);
-#endif
 		ticks=0;
 	}
 	if (timer_lst){
-#ifdef SHM_MEM
 		shm_free(timer_lst);
-#else
-		pkg_free(timer_lst);
-#endif
 		timer_lst=0;
 	}
 	if (running_timer){
@@ -216,28 +206,21 @@ int init_timer()
 		goto error;
 	}
 	/* init the shared structs */
-#ifdef SHM_MEM
 	ticks=shm_malloc(sizeof(ticks_t));
 	timer_lst=shm_malloc(sizeof(struct timer_lists));
-#else
-	/* in this case get_ticks won't work! */
-	LM_WARN("no shared memory support compiled in get_ticks won't work\n");
-	ticks=pkg_malloc(sizeof(ticks_t));
-	timer_lst=pkg_malloc(sizeof(struct timer_lists));
-#endif
 	if (ticks==0){
-		LM_CRIT("out of shared memory (ticks)\n");
+		SHM_MEM_CRITICAL;
 		ret=E_OUT_OF_MEM;
 		goto error;
 	}
 	if (timer_lst==0){
-		LM_CRIT("out of shared memory (timer_lst)\n");
+		SHM_MEM_CRITICAL;
 		ret=E_OUT_OF_MEM;
 		goto error;
 	}
 	running_timer=shm_malloc(sizeof(struct timer_ln*));
 	if (running_timer==0){
-		LM_CRIT("out of memory (running_timer)\n");
+		SHM_MEM_CRITICAL;
 		ret=E_OUT_OF_MEM;
 		goto error;
 	}
@@ -283,7 +266,7 @@ int init_timer()
 	slow_timer_lists=shm_malloc(sizeof(struct timer_head)*SLOW_LISTS_NO);
 	running_timer2=shm_malloc(sizeof(struct timer_ln*));
 	if ((t_idx==0)||(s_idx==0) || (slow_timer_lists==0) ||(running_timer2==0)){
-		LM_ERR("out of shared memory (slow)\n");
+		SHM_MEM_ERROR;
 		ret=E_OUT_OF_MEM;
 		goto error;
 	}
@@ -1011,7 +994,7 @@ int register_timer(timer_function f, void* param, unsigned int interval)
 
 	t=shm_malloc(sizeof(struct sr_timer));
 	if (t==0){
-		LM_ERR("out of memory\n");
+		SHM_MEM_ERROR;
 		goto error;
 	}
 	t->id=timer_id++;
@@ -1034,11 +1017,6 @@ error:
 
 ticks_t get_ticks_raw()
 {
-#ifndef SHM_MEM
-	LM_CRIT("no shared memory support compiled in"
-			", returning 0 (probably wrong)");
-	return 0;
-#endif
 	return *ticks;
 }
 
@@ -1047,11 +1025,6 @@ ticks_t get_ticks_raw()
 /* returns tick in s (for compatibility with the old code) */
 ticks_t get_ticks()
 {
-#ifndef SHM_MEM
-	LM_CRIT("no shared memory support compiled in"
-			", returning 0 (probably wrong)");
-	return 0;
-#endif
 	return TICKS_TO_S(*ticks);
 }
 

@@ -654,7 +654,7 @@ int tps_redis_load_invite_branch(sip_msg_t *msg, tps_data_t *md, tps_data_t *sd)
 		sval.s = NULL;
 		switch(rrpl->element[i]->type) {
 			case REDIS_REPLY_STRING:
-				LM_DBG("r[%d]: s[%.*s]\n", i, rrpl->element[i]->len,
+				LM_DBG("r[%d]: s[%.*s]\n", i, (int)rrpl->element[i]->len,
 						rrpl->element[i]->str);
 				sval.s = rrpl->element[i]->str;
 				sval.len = rrpl->element[i]->len;
@@ -737,7 +737,12 @@ int tps_redis_load_branch(sip_msg_t *msg, tps_data_t *md, tps_data_t *sd,
 			LM_ERR("failed to load the INVITE branch value\n");
 			return -1;
 		}
+		memset(&id, 0, sizeof(tps_data_t));
 		xvbranch1 = &id.x_vbranch1;
+	}
+	if(xvbranch1->len<=0 || xvbranch1->s==NULL) {
+		LM_DBG("branch value not found (mode: %u)\n", mode);
+		return 1;
 	}
 	rp = _tps_redis_cbuf;
 	memcpy(rp, _tps_redis_bprefix.s, _tps_redis_bprefix.len);
@@ -802,7 +807,7 @@ int tps_redis_load_branch(sip_msg_t *msg, tps_data_t *md, tps_data_t *sd,
 		sval.s = NULL;
 		switch(rrpl->element[i]->type) {
 			case REDIS_REPLY_STRING:
-				LM_DBG("r[%d]: s[%.*s]\n", i, rrpl->element[i]->len,
+				LM_DBG("r[%d]: s[%.*s]\n", i, (int)rrpl->element[i]->len,
 						rrpl->element[i]->str);
 				sval.s = rrpl->element[i]->str;
 				sval.len = rrpl->element[i]->len;
@@ -1005,7 +1010,7 @@ int tps_redis_load_dialog(sip_msg_t *msg, tps_data_t *md, tps_data_t *sd)
 		sval.s = NULL;
 		switch(rrpl->element[i]->type) {
 			case REDIS_REPLY_STRING:
-				LM_DBG("r[%d]: s[%.*s]\n", i, rrpl->element[i]->len,
+				LM_DBG("r[%d]: s[%.*s]\n", i, (int)rrpl->element[i]->len,
 						rrpl->element[i]->str);
 				sval.s = rrpl->element[i]->str;
 				sval.len = rrpl->element[i]->len;

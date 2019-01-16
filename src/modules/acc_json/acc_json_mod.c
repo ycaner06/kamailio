@@ -115,7 +115,8 @@ static int mod_init(void)
 	if(output_mqueue_str && (load_mq_api(&mq_api) != 0)) {
 		LM_ERR("can't load mqueue module API, disabling json acc to mqueue\n");
 		output_mqueue_str = NULL;
-	} else {
+	}
+	if(output_mqueue_str) {
 		q_name.s = output_mqueue_str;
 		q_name.len = strlen(output_mqueue_str);
 	}
@@ -129,9 +130,9 @@ static int mod_init(void)
 	memset(&_acc_json_engine, 0, sizeof(acc_engine_t));
 
 	if(acc_flag != -1)
-		_acc_json_engine.acc_flag = 1 << acc_flag;
+		_acc_json_engine.acc_flag = acc_flag;
 	if(acc_missed_flag != -1)
-		_acc_json_engine.missed_flag = 1 << acc_missed_flag;
+		_acc_json_engine.missed_flag = acc_missed_flag;
 	_acc_json_engine.acc_req = acc_json_send_request;
 	_acc_json_engine.acc_init = acc_json_init;
 	memcpy(_acc_json_engine.name, "json", 4);
@@ -160,6 +161,7 @@ static void destroy(void)
 
 int acc_json_init(acc_init_info_t *inf)
 {
+	LM_DBG(" init ...\n");
 	return 0;
 }
 
@@ -244,6 +246,27 @@ int acc_json_send_request(struct sip_msg *req, acc_info_t *inf)
 		json_object_set_new(object, extra->name.s, value);
 		free(tmp);
 		extra = extra->next;
+	}
+
+	/* add leginfo fields */
+	if(inf->leg_info) {
+		o = accb.get_leg_attrs(inf->leg_info, req, inf->varr + attr_cnt,
+			inf->iarr + attr_cnt, inf->tarr + attr_cnt, 1);
+		attr_cnt += o;
+		m = attr_cnt;
+
+		struct acc_extra *leg_info = inf->leg_info;
+		for(; i < m; i++) {
+			LM_DBG("[%d][%s][%.*s]\n", i, leg_info->name.s, inf->varr[i].len,
+					inf->varr[i].s);
+			char *tmp = strndup(inf->varr[i].s, inf->varr[i].len);
+			json_t *value = json_string(tmp);
+			if(!value)
+				value = json_string("NON-UTF8");
+			json_object_set_new(object, leg_info->name.s, value);
+			free(tmp);
+			leg_info = leg_info->next;
+		}
 	}
 
 	if(object) {

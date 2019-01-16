@@ -294,6 +294,7 @@ LOGPREFIXMODE	log_prefix_mode
 LOGENGINETYPE	log_engine_type
 LOGENGINEDATA	log_engine_data
 XAVPVIAPARAMS	xavp_via_params
+XAVPVIAFIELDS	xavp_via_fields
 LISTEN		listen
 ADVERTISE	advertise|ADVERTISE
 ALIAS		alias
@@ -398,6 +399,7 @@ TCP_OPT_KEEPCNT		"tcp_keepcnt"
 TCP_OPT_CRLF_PING	"tcp_crlf_ping"
 TCP_OPT_ACCEPT_NO_CL	"tcp_accept_no_cl"
 TCP_OPT_ACCEPT_HEP3	"tcp_accept_hep3"
+TCP_OPT_ACCEPT_HAPROXY	"tcp_accept_haproxy"
 TCP_CLONE_RCVBUF	"tcp_clone_rcvbuf"
 TCP_REUSE_PORT		"tcp_reuse_port"
 DISABLE_TLS		"disable_tls"|"tls_disable"
@@ -570,23 +572,23 @@ IMPORTFILE      "import_file"
 <INITIAL>{ISAVPFLAGSET}	{ count(); yylval.strval=yytext; return ISAVPFLAGSET; }
 <INITIAL>{AVPFLAGS_DECL}	{ count(); yylval.strval=yytext; return AVPFLAGS_DECL; }
 <INITIAL>{MSGLEN}	{ count(); yylval.strval=yytext; return MSGLEN; }
-<INITIAL>{ROUTE}	{ count(); routename=0; default_routename="DEFAULT_ROUTE";
+<INITIAL>{ROUTE}	{ count(); default_routename="DEFAULT_ROUTE";
 						yylval.strval=yytext; return ROUTE; }
-<INITIAL>{ROUTE_REQUEST}	{ count(); routename=0; default_routename="DEFAULT_ROUTE";
+<INITIAL>{ROUTE_REQUEST}	{ count(); default_routename="DEFAULT_ROUTE";
 								yylval.strval=yytext; return ROUTE_REQUEST; }
-<INITIAL>{ROUTE_ONREPLY}	{ count(); routename=0; default_routename="DEFAULT_ONREPLY";
+<INITIAL>{ROUTE_ONREPLY}	{ count(); default_routename="DEFAULT_ONREPLY";
 								yylval.strval=yytext;
 								return ROUTE_ONREPLY; }
-<INITIAL>{ROUTE_REPLY}	{ count(); routename=0; default_routename="DEFAULT_ONREPLY";
+<INITIAL>{ROUTE_REPLY}	{ count(); default_routename="DEFAULT_ONREPLY";
 							yylval.strval=yytext; return ROUTE_REPLY; }
-<INITIAL>{ROUTE_FAILURE}	{ count(); routename=0; default_routename="DEFAULT_FAILURE";
+<INITIAL>{ROUTE_FAILURE}	{ count(); default_routename="DEFAULT_FAILURE";
 								yylval.strval=yytext;
 								return ROUTE_FAILURE; }
-<INITIAL>{ROUTE_BRANCH} { count(); routename=0; default_routename="DEFAULT_BRANCH";
+<INITIAL>{ROUTE_BRANCH} { count(); default_routename="DEFAULT_BRANCH";
 							yylval.strval=yytext; return ROUTE_BRANCH; }
-<INITIAL>{ROUTE_SEND} { count(); routename=0; default_routename="DEFAULT_SEND";
+<INITIAL>{ROUTE_SEND} { count(); default_routename="DEFAULT_SEND";
 							yylval.strval=yytext; return ROUTE_SEND; }
-<INITIAL>{ROUTE_EVENT} { count(); routename=0; default_routename="DEFAULT_EVENT";
+<INITIAL>{ROUTE_EVENT} { count(); default_routename="DEFAULT_EVENT";
 							yylval.strval=yytext;
 							state=EVRT_NAME_S; BEGIN(EVRTNAME);
 							return ROUTE_EVENT; }
@@ -697,6 +699,7 @@ IMPORTFILE      "import_file"
 <INITIAL>{LOGENGINETYPE}	{ yylval.strval=yytext; return LOGENGINETYPE; }
 <INITIAL>{LOGENGINEDATA}	{ yylval.strval=yytext; return LOGENGINEDATA; }
 <INITIAL>{XAVPVIAPARAMS}	{ yylval.strval=yytext; return XAVPVIAPARAMS; }
+<INITIAL>{XAVPVIAFIELDS}	{ yylval.strval=yytext; return XAVPVIAFIELDS; }
 <INITIAL>{LISTEN}	{ count(); yylval.strval=yytext; return LISTEN; }
 <INITIAL>{ADVERTISE}	{ count(); yylval.strval=yytext; return ADVERTISE; }
 <INITIAL>{ALIAS}	{ count(); yylval.strval=yytext; return ALIAS; }
@@ -854,6 +857,8 @@ IMPORTFILE      "import_file"
 									return TCP_OPT_ACCEPT_NO_CL; }
 <INITIAL>{TCP_OPT_ACCEPT_HEP3}	{ count(); yylval.strval=yytext;
 									return TCP_OPT_ACCEPT_HEP3; }
+<INITIAL>{TCP_OPT_ACCEPT_HAPROXY}	{ count(); yylval.strval=yytext;
+									return TCP_OPT_ACCEPT_HAPROXY; }
 <INITIAL>{TCP_CLONE_RCVBUF}		{ count(); yylval.strval=yytext;
 									return TCP_CLONE_RCVBUF; }
 <INITIAL>{TCP_REUSE_PORT}	{ count(); yylval.strval=yytext; return TCP_REUSE_PORT; }
@@ -1428,8 +1433,7 @@ static char* addstr(struct str_buf* dst_b, char* src, int len)
 
 	return dst_b->s;
 error:
-	LM_CRIT("lex: memory allocation error\n");
-	LM_CRIT("lex: try to increase pkg size with -M parameter\n");
+	PKG_MEM_CRITICAL;
 	exit(-1);
 }
 
@@ -1597,7 +1601,7 @@ static int sr_push_yy_state(char *fin, int mode)
 		newf = (char*)pkg_malloc(x-tmpfiname+strlen(fbuf)+2);
 		if(newf==0)
 		{
-			LM_CRIT("no more pkg\n");
+			PKG_MEM_CRITICAL;
 			return -1;
 		}
 		newf[0] = '\0';
@@ -1659,7 +1663,7 @@ static int sr_push_yy_state(char *fin, int mode)
 		{
 			if(newf!=fbuf)
 				pkg_free(newf);
-			LM_CRIT("no more pkg\n");
+			PKG_MEM_CRITICAL;
 			return -1;
 		}
 		if(newf==fbuf)
@@ -1668,7 +1672,7 @@ static int sr_push_yy_state(char *fin, int mode)
 			if(fn->fname==0)
 			{
 				pkg_free(fn);
-				LM_CRIT("no more pkg!\n");
+				PKG_MEM_CRITICAL;
 				return -1;
 			}
 			strcpy(fn->fname, fbuf);
@@ -1788,7 +1792,7 @@ int pp_define(int len, const char * text)
 	pp_defines[pp_num_defines].name.len = len;
 	pp_defines[pp_num_defines].name.s = (char*)pkg_malloc(len+1);
 	if(pp_defines[pp_num_defines].name.s==NULL) {
-		LM_CRIT("no more memory to define: %.*s\n", len, text);
+		PKG_MEM_CRITICAL;
 		return -1;
 	}
 	memcpy(pp_defines[pp_num_defines].name.s, text, len);

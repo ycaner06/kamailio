@@ -114,6 +114,7 @@ extern char version[];
 extern int version_len;
 
 str _ksr_xavp_via_params = STR_NULL;
+str _ksr_xavp_via_fields = STR_NULL;
 
 /** per process fixup function for global_req_flags.
   * It should be called from the configuration framework.
@@ -178,7 +179,7 @@ static int check_via_address(struct ip_addr* ip, str *name,
 				LM_CRIT("invalid Via host name\n");
 				return -1;
 			}
-			if (strncmp(name->s, s, name->len)==0)
+			if (len==name->len&&(strncmp(name->s, s, name->len)==0))
 				return 0;
 		}
 	}else{
@@ -331,7 +332,7 @@ char* received_builder(struct sip_msg *msg, unsigned int *received_len)
 	buf=pkg_malloc(sizeof(char)*MAX_RECEIVED_SIZE);
 	if (buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memcpy(buf, RECEIVED, RECEIVED_LEN);
@@ -364,7 +365,7 @@ char* rport_builder(struct sip_msg *msg, unsigned int *rport_len)
 	buf=pkg_malloc(sizeof(char)*(len+1));/* space for null term */
 	if (buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memcpy(buf, RPORT, RPORT_LEN);
@@ -396,7 +397,7 @@ char* id_builder(struct sip_msg* msg, unsigned int *id_len)
 	buf=pkg_malloc(sizeof(char)*(len+1));/* place for ending \0 */
 	if (buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memcpy(buf, ID_PARAM, ID_PARAM_LEN);
@@ -439,7 +440,7 @@ char* clen_builder(	struct sip_msg* msg, int *clen_len, int diff,
 	buf=pkg_malloc(sizeof(char)*(len+1));
 	if (buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	if (body_only) {
@@ -1712,7 +1713,7 @@ int get_boundary(struct sip_msg* msg, str* boundary)
 		msg->content_type->body.len);
 	if (params.s == NULL)
 	{
-		LM_INFO("Content-Type hdr has no params <%.*s>\n",
+		LM_INFO("Content-Type hdr has no boundary params <%.*s>\n",
 				msg->content_type->body.len, msg->content_type->body.s);
 		return -1;
 	}
@@ -1733,7 +1734,7 @@ int get_boundary(struct sip_msg* msg, str* boundary)
 			if (boundary->s == NULL)
 			{
 				free_params(list);
-				LM_ERR("no memory for boundary string\n");
+				PKG_MEM_ERROR;
 				return -1;
 			}
 			*(boundary->s) = '-';
@@ -1837,10 +1838,10 @@ int check_boundaries(struct sip_msg *msg, struct dest_info *send_info)
 			tmp.len = get_line(lb_t->s);
 			if(tmp.len!=b.len || strncmp(b.s, tmp.s, b.len)!=0)
 			{
-				LM_DBG("malformed bondary in the middle\n");
+				LM_DBG("malformed boundary in the middle\n");
 				memcpy(pb, b.s, b.len); body.len = body.len + b.len;
 				pb = pb + b.len;
-				t = lb_t->s.s - (lb_t->s.s + tmp.len);
+				t = lb_t->next->s.s - (lb_t->s.s + tmp.len);
 				memcpy(pb, lb_t->s.s+tmp.len, t); pb = pb + t;
 				/*LM_DBG("new chunk[%d][%.*s]\n", t, t, pb-t);*/
 			}
@@ -2086,7 +2087,7 @@ after_update_via1:
 		path_buf.len=ROUTE_PREFIX_LEN+msg->path_vec.len+CRLF_LEN;
 		path_buf.s=pkg_malloc(path_buf.len+1);
 		if (unlikely(path_buf.s==0)){
-			LM_ERR("out of memory\n");
+		        PKG_MEM_ERROR;
 			ser_error=E_OUT_OF_MEM;
 			goto error00;
 		}
@@ -2186,7 +2187,10 @@ after_update_via1:
 		new_buf=(char*)pkg_malloc(new_len+1);
 	if (new_buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		if(unlikely(mode&BUILD_IN_SHM))
+                        SHM_MEM_ERROR;
+                else
+                        PKG_MEM_ERROR;
 		goto error00;
 	}
 
@@ -2288,7 +2292,7 @@ char * generate_res_buf_from_sip_res( struct sip_msg* msg,
 	new_buf=(char*)pkg_malloc(new_len+1); /* +1 is for debugging
 											 (\0 to print it )*/
 	if (new_buf==0){
-		LM_ERR("out of mem\n");
+	        PKG_MEM_ERROR;
 		goto error;
 	}
 	new_buf[new_len]=0; /* debug: print the message */
@@ -2445,7 +2449,7 @@ char * build_res_buf_from_sip_req( unsigned int code, str *text ,str *new_tag,
 	buf = (char*) pkg_malloc( len+1 );
 	if (!buf)
 	{
-		LM_ERR("out of memory; needs %d\n",len);
+	        PKG_MEM_ERROR;
 		goto error01;
 	}
 
@@ -2673,10 +2677,10 @@ int branch_builder( unsigned int hash_index,
 
 
 
-/* uses only the send_info->send_socket, send_info->proto and 
+/* uses only the send_info->send_socket, send_info->proto and
  * send_info->comp (so that a send_info used for sending can be passed
  * to this function w/o changes and the correct via will be built) */
-char* via_builder( unsigned int *len,
+char* via_builder(unsigned int *len, sip_msg_t *msg,
 	struct dest_info* send_info /* where to send the reply */,
 	str* branch, str* extra_params, struct hostport* hp)
 {
@@ -2684,8 +2688,8 @@ char* via_builder( unsigned int *len,
 	char               *line_buf;
 	int max_len;
 	int via_prefix_len;
-	str* address_str; /* address displayed in via */
-	str* port_str; /* port no displayed in via */
+	str* address_str = NULL; /* address displayed in via */
+	str* port_str = NULL; /* port no displayed in via */
 	struct socket_info* send_sock;
 	int comp_len, comp_name_len;
 #ifdef USE_COMP
@@ -2696,22 +2700,46 @@ char* via_builder( unsigned int *len,
 	union sockaddr_union *from = NULL;
 	union sockaddr_union local_addr;
 	struct tcp_connection *con = NULL;
+	sr_xavp_t *rxavp = NULL;
+	str xname;
 
 	send_sock=send_info->send_sock;
 	/* use pre-set address in via, the outbound socket alias or address one */
-	if (hp && hp->host->len)
-		address_str=hp->host;
-	else if(send_sock->useinfo.name.len>0)
-		address_str=&(send_sock->useinfo.name);
-	else
-		address_str=&(send_sock->address_str);
-	if (hp && hp->port->len)
-		port_str=hp->port;
-	else if(send_sock->useinfo.port_no>0)
-		port_str=&(send_sock->useinfo.port_no_str);
-	else
-		port_str=&(send_sock->port_no_str);
-	
+	if(msg && (msg->msg_flags&FL_USE_XAVP_VIA_FIELDS)
+			&& _ksr_xavp_via_fields.len>0) {
+		xname.s = "address";
+		xname.len = 7;
+		rxavp = xavp_get_child_with_sval(&_ksr_xavp_via_fields, &xname);
+		if(rxavp!=NULL) {
+			address_str = &rxavp->val.v.s;
+		}
+	}
+	if(address_str==NULL) {
+		if (hp && hp->host->len)
+			address_str=hp->host;
+		else if(send_sock->useinfo.name.len>0)
+			address_str=&(send_sock->useinfo.name);
+		else
+			address_str=&(send_sock->address_str);
+	}
+	if(msg && (msg->msg_flags&FL_USE_XAVP_VIA_FIELDS)
+			&& _ksr_xavp_via_fields.len>0) {
+		xname.s = "port";
+		xname.len = 4;
+		rxavp = xavp_get_child_with_sval(&_ksr_xavp_via_fields, &xname);
+		if(rxavp!=NULL) {
+			port_str = &rxavp->val.v.s;
+		}
+	}
+	if(port_str==NULL) {
+		if (hp && hp->port->len)
+			port_str=hp->port;
+		else if(send_sock->useinfo.port_no>0)
+			port_str=&(send_sock->useinfo.port_no_str);
+		else
+			port_str=&(send_sock->port_no_str);
+	}
+
 	comp_len=comp_name_len=0;
 #ifdef USE_COMP
 	comp_name=0;
@@ -2745,7 +2773,7 @@ char* via_builder( unsigned int *len,
 	line_buf=pkg_malloc( max_len );
 	if (line_buf==0){
 		ser_error=E_OUT_OF_MEM;
-		LM_ERR("out of memory\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 
@@ -2861,7 +2889,7 @@ char* via_builder( unsigned int *len,
 
 /* creates a via header honoring the protocol of the incoming socket
  * msg is an optional parameter */
-char* create_via_hf( unsigned int *len,
+char* create_via_hf(unsigned int *len,
 	struct sip_msg *msg,
 	struct dest_info* send_info /* where to send the reply */,
 	str* branch)
@@ -2917,7 +2945,7 @@ char* create_via_hf( unsigned int *len,
 		/* params so far + ';rport' + '\0' */
 		via = (char*)pkg_malloc(extra_params.len+RPORT_LEN);
 		if(via==0) {
-			LM_ERR("building local rport via param failed\n");
+		        PKG_MEM_ERROR;
 			if (extra_params.s) pkg_free(extra_params.s);
 			return 0;
 		}
@@ -2939,7 +2967,7 @@ char* create_via_hf( unsigned int *len,
 		} else {
 			via = (char*)pkg_malloc(extra_params.len+slen+1);
 			if(via==0) {
-				LM_ERR("building srvid param failed\n");
+			        PKG_MEM_ERROR;
 				if (extra_params.s) pkg_free(extra_params.s);
 				return 0;
 			}
@@ -2955,14 +2983,15 @@ char* create_via_hf( unsigned int *len,
 	}
 
 	/* test and add xavp params */
-	if(msg && (msg->msg_flags&FL_ADD_XAVP_VIA) && _ksr_xavp_via_params.len>0) {
+	if(msg && (msg->msg_flags&FL_ADD_XAVP_VIA_PARAMS)
+			&& _ksr_xavp_via_params.len>0) {
 		xparams.s = pv_get_buffer();
 		xparams.len = xavp_serialize_fields(&_ksr_xavp_via_params,
 							xparams.s, pv_get_buffer_size());
 		if(xparams.len>0) {
 			via = (char*)pkg_malloc(extra_params.len+xparams.len+2);
 			if(via==0) {
-				LM_ERR("building xavps params failed\n");
+			        PKG_MEM_ERROR;
 				if (extra_params.s) pkg_free(extra_params.s);
 				return 0;
 			}
@@ -2981,7 +3010,7 @@ char* create_via_hf( unsigned int *len,
 	}
 
 	set_hostport(&hp, msg);
-	via = via_builder( len, send_info, branch,
+	via = via_builder(len, msg, send_info, branch,
 							extra_params.len?&extra_params:0, &hp);
 
 	/* we do not need extra_params any more, already in the new via header */
@@ -3022,7 +3051,7 @@ char * build_only_headers( struct sip_msg* msg, int skip_first_line,
 
 	new_buf = (char *)pkg_malloc(new_len+1);
 	if (!new_buf) {
-		LM_ERR("Not enough memory\n");
+	        PKG_MEM_ERROR;
 		*error = -1;
 		return 0;
 	}
@@ -3072,7 +3101,7 @@ char * build_body( struct sip_msg* msg,
 
 	new_buf = (char *)pkg_malloc(new_len+1);
 	if (!new_buf) {
-		LM_ERR("Not enough memory\n");
+	        PKG_MEM_ERROR;
 		*error = -1;
 		return 0;
 	}
@@ -3132,7 +3161,7 @@ char * build_all( struct sip_msg* msg, int touch_clen,
 
 	new_buf = (char *)pkg_malloc(new_len+1);
 	if (!new_buf) {
-		LM_ERR("Not enough memory\n");
+	        PKG_MEM_ERROR;
 		*error = -1;
 		return 0;
 	}

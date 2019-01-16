@@ -163,6 +163,12 @@ int db_bind_mod(const str* mod, db_func_t* mydbf)
 		LM_CRIT("null dbf parameter\n");
 		return -1;
 	}
+
+	/* for safety we initialize mydbf with 0 (this will cause
+	 *  a segfault immediately if someone tries to call a function
+	 *  from it without checking the return code from bind_dbmod */
+	memset((void*)mydbf, 0, sizeof(db_func_t));
+
 	if (mod->len > MAX_URL_LENGTH)
 	{
 		LM_ERR("SQL URL too long\n");
@@ -171,24 +177,19 @@ int db_bind_mod(const str* mod, db_func_t* mydbf)
 	// add the prefix
 	name = pkg_malloc(mod->len + 4);
 	if (!name) {
-		LM_ERR("no private memory left\n");
+		PKG_MEM_ERROR;
 		return -1;
 	}
 	memcpy(name, "db_", 3);
 	memcpy(name+3, mod->s, mod->len);
 	name[mod->len+3] = 0;
 
-	/* for safety we initialize mydbf with 0 (this will cause
-	 *  a segfault immediately if someone tries to call a function
-	 *  from it without checking the return code from bind_dbmod */
-	memset((void*)mydbf, 0, sizeof(db_func_t));
-
 	p = strchr(name, ':');
 	if (p) {
 		len = p - name;
 		tmp = (char*)pkg_malloc(len + 4);
 		if (!tmp) {
-			LM_ERR("no private memory left\n");
+			PKG_MEM_ERROR;
 			pkg_free(name);
 			return -1;
 		}
@@ -297,7 +298,7 @@ db1_con_t* db_do_init2(const str* url, void* (*new_connection)(), db_pooling_t p
 	/* this is the root memory for this database connection. */
 	res = (db1_con_t*)pkg_malloc(con_size);
 	if (!res) {
-		LM_ERR("no private memory left\n");
+		PKG_MEM_ERROR;
 		return 0;
 	}
 	memset(res, 0, con_size);
@@ -357,13 +358,16 @@ void db_do_close(db1_con_t* _h, void (*free_connection)())
 }
 
 
-
-/*! \brief
- * Get version of a table
- * \param dbf
- * \param connection
- * \param table
- * \return If there is no row for the given table, return version 0
+/**
+ * \brief Get the version of a table.
+ *
+ * Returns the version number of a given table from the version table.
+ * Instead of this function you should use db_check_table_version!
+ * \see db_check_table_version
+ * \param dbf database module callbacks
+ * \param con database connection handle
+ * \param table checked table
+ * \return the version number if present, 0 if no version data available, < 0 on error
  */
 int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* table)
 {
@@ -441,9 +445,15 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
 	return ret;
 }
 
-/*! \brief
- * Check the table version
- * 0 means ok, -1 means an error occurred
+/**
+ * \brief Check the table version, including user error logging.
+ *
+ * Small helper function to check the table version, including user error logging.
+ * \param dbf database module callbacks
+ * \param dbh database connection handle
+ * \param table checked table
+ * \param version checked version
+ * \return 0 means ok, -1 means an error occurred
  */
 int db_check_table_version(db_func_t* dbf, db1_con_t* dbh, const str* table,
 		const unsigned int version)

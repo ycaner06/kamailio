@@ -123,6 +123,7 @@ Julien Chavanton
               5.2. dispatcher.list
               5.3. dispatcher.reload
               5.4. dispatcher.ping_active
+              5.5. dispatcher.add
 
         6. Installation and Running
 
@@ -264,6 +265,7 @@ Chapter 1. Admin Guide
         5.2. dispatcher.list
         5.3. dispatcher.reload
         5.4. dispatcher.ping_active
+        5.5. dispatcher.add
 
    6. Installation and Running
 
@@ -697,10 +699,15 @@ Note
    Controls what gateways are tested to see if they are reachable.
      * Value 0: If set to 0, only the gateways with state PROBING are
        tested. After a gateway is probed, the PROBING state is cleared in
-       this mode.
+       this mode. This means that no probing will be executed at all only
+       if flag in config file is set to 8/PROBING (please check
+       destination list file syntaxis for more details), it will probe
+       only one time at startup or after dispatcher reload.
      * Value 1: If set to 1, all gateways are tested. If set to 1 and
        there is a failure of keepalive to an active gateway, then it is
-       set to TRYING state.
+       set to TRYING state. This means that probing will be executed all
+       the time, but you can skip some servers with flag 4 in destination
+       list file, for example.
      * Value 2: if set to 2, only gateways in inactive state with probing
        mode set are tested.
      * Value 3: If set to 3, any gateway with state PROBING is continually
@@ -993,7 +1000,7 @@ modparam("dispatcher", "ds_db_extra_attrs", "socket=socket;pref=prefix")
             tolerance. When facing congestion the weight of a gateway is
             lowered by 1 for every ms of estimated congestion, a 'rweight'
             value of 50 is recommended. See the example "configuring load
-            balancing with congestion detection" bellow.
+            balancing with congestion detection" below.
             The congestion estimation is done using an EWMA (see
             ds_latency_estimator_alpha). If all the gateways in a set are
             above their congestion threshold(weight), the load
@@ -1351,6 +1358,7 @@ onreply_route {
    5.2. dispatcher.list
    5.3. dispatcher.reload
    5.4. dispatcher.ping_active
+   5.5. dispatcher.add
 
 5.1.  dispatcher.set_state
 
@@ -1388,6 +1396,21 @@ kamcmd dispatcher.set_state ip 3 all
 
    Example:
                 kamcmd dispatcher.list
+ ...
+DEST: {
+        URI: sip:192.168.0.1:5060
+        FLAGS: AP
+        PRIORITY: 12
+}
+ ...
+
+   FLAGS consist out of 2 letters. First letter describe status of
+   destination: A-active, I â inactive, T â trying, D â disabled.
+   Second letter might be P or X. P is for probing, so AP means
+   destination is active and it is tested by SIP options continuously. X
+   means that there are no probing or sip pinging. So AX means that
+   destination is assumed as active and it is not tested by SIP options.
+   DX respectively is disabled destination that is not tested, etc.
 
 5.3.  dispatcher.reload
 
@@ -1423,6 +1446,26 @@ kamcmd dispatcher.set_state ip 3 all
 kamcmd dispatcher.ping_active 0
 ...
 
+5.5.  dispatcher.add
+
+   Add a destination address to the in-memory dispatcher list. Reloading
+   the dispatcher will remove any destinations that are only added to the
+   in-memory dispatcher list.
+
+   Name: dispatcher.add
+
+   Parameters:
+     * _group_: destination group id
+     * _address_: address of the destination in the _group_
+     * _flags_ (optional): as described in the list file format, default 0
+
+   Example:
+...
+# prototype: kamcmd dispatcher.add _group_ _address_ _flags_
+kamcmd dispatcher.add 2 sip:127.0.0.1:5080
+kamcmd dispatcher.add 3 sip:127.0.0.1:5075 8
+...
+
 6. Installation and Running
 
    6.1. Destination List File
@@ -1439,12 +1482,21 @@ kamcmd dispatcher.ping_active 0
    destination address (string value in full SIP URI format).
 
    Optionally, these fields can be followed by:
-     * flags (listed by index - can be bitwise mask of values): 0 (value
-       1) - inactive destination; 1 (value 2) - temporary trying
-       destination (in the way to become inactive if it does not reply to
-       keepalives - there is a module parameter to set the threshold of
-       failures); 2 (value 4) - admin disabled destination; 3 (value 8) -
-       probing destination (sending keep alives);
+     * flags - control the mode of using the destination address and
+       sending keepalives. It is a bitwise value that can be built using
+       the folowing flags:
+          + 1 (bit at index 0 - 1 <<0) - inactive destination
+          + 2 (bit at index 1 - 1 <<1) - temporary trying destination (in
+            the way to become inactive if it does not reply to keepalives
+            - there is a module parameter to set the threshold of
+            failures)
+          + 4 (bit at index 2 - 1 <<2) - admin disabled destination
+          + 8 (bit at index 3 - 1 <<3) - probing destination (sending keep
+            alives);
+          + 16 (bit at index 4 - 1 <<4) - skip DNS A/AAAA resolve at
+            startup, useful when the hostname of the destination address
+            is a NAPTR or SRV record only. Such addresses cannot be
+            matched anymore with ds_is_from_list(...).
      * priority: sets the priority in destination list (based on it is
        done the initial ordering inside the set)
      * attributes: extra fields in form of name1=value1;...;nameN=valueN.

@@ -35,7 +35,7 @@ cfg_script_var_t *new_cfg_script_var(char *gname, char *vname, unsigned int type
 					char *descr)
 {
 	cfg_group_t	*group;
-	cfg_script_var_t	*var;
+	cfg_script_var_t	*var, **last_var;
 	int	gname_len, vname_len, descr_len;
 
 	LM_DBG("declaring %s.%s\n", gname, vname);
@@ -112,9 +112,15 @@ cfg_script_var_t *new_cfg_script_var(char *gname, char *vname, unsigned int type
 	memset(var, 0, sizeof(cfg_script_var_t));
 	var->type = type;
 
-	/* add the variable to the group */
-	var->next = (cfg_script_var_t *)(void *)group->vars;
-	group->vars = (char *)(void *)var;
+	/* Add the variable to the end of the group.
+	 * The order is important because the padding depends on that.
+	 * The list will be travelled later again, which must be done in
+	 * the same order. */
+	last_var = (cfg_script_var_t **)(void **)&group->vars;
+	while ((*last_var))
+		last_var = &((*last_var)->next);
+	*last_var = var;
+	var->next = NULL;
 
 	/* clone the name of the variable */
 	var->name = (char *)pkg_malloc(sizeof(char) * (vname_len + 1));
@@ -133,7 +139,7 @@ cfg_script_var_t *new_cfg_script_var(char *gname, char *vname, unsigned int type
 	return var;
 
 error:
-	LM_ERR("not enough memory\n");
+	PKG_MEM_ERROR;
 	return NULL;
 }
 
@@ -182,7 +188,7 @@ int cfg_set_script_var(cfg_group_t *group, str *var_name,
 					s.len = ((str *)v)->len;
 					s.s = pkg_malloc(sizeof(char) * (s.len + 1));
 					if (!s.s) {
-						LM_ERR("not enough memory\n");
+						PKG_MEM_ERROR;
 						goto error;
 					}
 					memcpy(s.s, ((str *)v)->s, s.len);
@@ -282,6 +288,14 @@ int cfg_script_fixup(cfg_group_t *group, unsigned char *block)
 		}
 	}
 
+	/* Sanity check for the group size, make sure that the
+	 * newly calculated size equals the already calculated
+	 * group size. */
+	if (offset != group->size) {
+		LM_ERR("BUG: incorrect group size: %d; previously calculated value: %d \n", offset, group->size);
+		goto error;
+	}
+
 	/* allocate a handle even if it will not be used to
 	directly access the variable, like handle->variable
 	cfg_get_* functions access the memory block via the handle
@@ -311,7 +325,7 @@ error:
 	if (def) pkg_free(def);
 	if (handle) pkg_free(handle);
 
-	LM_ERR("not enough memory\n");
+	PKG_MEM_ERROR;
 	return -1;
 }
 

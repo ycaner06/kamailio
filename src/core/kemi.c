@@ -274,10 +274,28 @@ static int sr_kemi_core_is_myself_suri(sip_msg_t *msg)
 
 	if(get_src_uri(msg, 0, &suri)<0) {
 		LM_ERR("cannot src address uri\n");
-		return SR_KEMI_FALSE; 
+		return SR_KEMI_FALSE;
 	}
 
 	return sr_kemi_core_is_myself(msg, &suri);
+}
+
+/**
+ *
+ */
+static int sr_kemi_core_is_myself_srcip(sip_msg_t *msg)
+{
+	str srcip;
+	int ret;
+
+	srcip.s = ip_addr2a(&msg->rcv.src_ip);
+	srcip.len = strlen(srcip.s);
+
+	ret = check_self(&srcip, 0, 0);
+	if(ret==1) {
+		return SR_KEMI_TRUE;
+	}
+	return SR_KEMI_FALSE;
 }
 
 /**
@@ -1267,6 +1285,11 @@ static sr_kemi_t _sr_kemi_core[] = {
 		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
+	{ str_init(""), str_init("is_myself_srcip"),
+		SR_KEMIP_BOOL, sr_kemi_core_is_myself_srcip,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 	{ str_init(""), str_init("setflag"),
 		SR_KEMIP_BOOL, sr_kemi_core_setflag,
 		{ SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE,
@@ -1510,7 +1533,7 @@ static int sr_kemi_hdr_append(sip_msg_t *msg, str *txt)
 
 	hdr = (char*)pkg_malloc(txt->len);
 	if(hdr==NULL) {
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return -1;
 	}
 	memcpy(hdr, txt->s, txt->len);
@@ -1570,7 +1593,7 @@ static int sr_kemi_hdr_append_after(sip_msg_t *msg, str *txt, str *hname)
 
 	hdr = (char*)pkg_malloc(txt->len);
 	if(hdr==NULL) {
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return -1;
 	}
 	memcpy(hdr, txt->s, txt->len);
@@ -1702,7 +1725,7 @@ static int sr_kemi_hdr_insert(sip_msg_t *msg, str *txt)
 	LM_DBG("insert hf: %.*s\n", txt->len, txt->s);
 	hdr = (char*)pkg_malloc(txt->len);
 	if(hdr==NULL) {
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return -1;
 	}
 	memcpy(hdr, txt->s, txt->len);
@@ -1762,7 +1785,7 @@ static int sr_kemi_hdr_insert_before(sip_msg_t *msg, str *txt, str *hname)
 
 	hdr = (char*)pkg_malloc(txt->len);
 	if(hdr==NULL) {
-		LM_ERR("no pkg memory left\n");
+		PKG_MEM_ERROR;
 		return -1;
 	}
 	memcpy(hdr, txt->s, txt->len);
@@ -2071,14 +2094,14 @@ int sr_kemi_cbname_list_init(void)
 	if(_sr_kemi_cbname_list_size==NULL) {
 		lock_destroy(_sr_kemi_cbname_lock);
 		lock_dealloc(_sr_kemi_cbname_lock);
-		LM_ERR("no more shared memory\n");
+		SHM_MEM_ERROR;
 		return -1;
 	}
 	*_sr_kemi_cbname_list_size = 0;
 	_sr_kemi_cbname_list
 			= shm_malloc(KEMI_CBNAME_LIST_SIZE*sizeof(sr_kemi_cbname_t));
 	if(_sr_kemi_cbname_list==NULL) {
-		LM_ERR("no more shared memory\n");
+		SHM_MEM_ERROR;
 		shm_free(_sr_kemi_cbname_list_size);
 		_sr_kemi_cbname_list_size = NULL;
 		lock_destroy(_sr_kemi_cbname_lock);

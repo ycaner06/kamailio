@@ -349,7 +349,7 @@ static int mod_init(void)
 				ds_default_socket.len, ds_default_socket.s);
 	}
 
-	if(init_data() != 0)
+	if(ds_init_data() != 0)
 		return -1;
 
 	if(ds_db_url.s) {
@@ -369,7 +369,7 @@ static int mod_init(void)
 				}
 			}
 		}
-		if(init_ds_db() != 0) {
+		if(ds_init_db() != 0) {
 			LM_ERR("could not initiate a connect to the database\n");
 			return -1;
 		}
@@ -632,7 +632,6 @@ static int ki_ds_select_routes_limit(sip_msg_t *msg, str *srules, str *smode,
 	int i;
 	int vret;
 	int gret;
-	int vfirst;
 	sr_xval_t nxval;
 	ds_select_state_t vstate;
 
@@ -644,7 +643,6 @@ static int ki_ds_select_routes_limit(sip_msg_t *msg, str *srules, str *smode,
 	}
 	vret = -1;
 	gret = -1;
-	vfirst = 0;
 	i = 0;
 	while(i<srules->len) {
 		vstate.setid = 0;
@@ -677,9 +675,11 @@ static int ki_ds_select_routes_limit(sip_msg_t *msg, str *srules, str *smode,
 		}
 		LM_DBG("routing with setid=%d alg=%d cnt=%d limit=0x%x (%u)\n",
 			vstate.setid, vstate.alg, vstate.cnt, vstate.limit, vstate.limit);
-		
+
 		vstate.umode = DS_SETOP_XAVP;
-		if(vfirst==0) {
+		/* if no r-uri/d-uri was set already, keep using the update mode
+		 * specified by the param, then just add to xavps list */
+		if(vstate.emode==0) {
 			switch(smode->s[0]) {
 				case '0':
 				case 'd':
@@ -700,7 +700,6 @@ static int ki_ds_select_routes_limit(sip_msg_t *msg, str *srules, str *smode,
 							smode->len, smode->s);
 					return -1;
 			}
-			vfirst = 1;
 		}
 		vret = ds_manage_routes(msg, &vstate);
 		if(vret<0) {
@@ -1640,6 +1639,33 @@ static void dispatcher_rpc_ping_active(rpc_t *rpc, void *ctx)
 	return;
 }
 
+static const char *dispatcher_rpc_add_doc[2] = {
+		"Add a destination address in memory", 0};
+
+
+/*
+ * RPC command to add a destination address to memory
+ */
+static void dispatcher_rpc_add(rpc_t *rpc, void *ctx)
+{
+	int group, flags;
+	str dest;
+
+	flags = 0;
+
+	if(rpc->scan(ctx, "dS*d", &group, &dest, &flags) < 2) {
+		rpc->fault(ctx, 500, "Invalid Parameters");
+		return;
+	}
+
+	if(ds_add_dst(group, &dest, flags) != 0) {
+		rpc->fault(ctx, 500, "Adding dispatcher dst failed");
+		return;
+	}
+
+	return;
+}
+
 /* clang-format off */
 rpc_export_t dispatcher_rpc_cmds[] = {
 	{"dispatcher.reload", dispatcher_rpc_reload,
@@ -1650,6 +1676,8 @@ rpc_export_t dispatcher_rpc_cmds[] = {
 		dispatcher_rpc_set_state_doc,   0},
 	{"dispatcher.ping_active",   dispatcher_rpc_ping_active,
 		dispatcher_rpc_ping_active_doc, 0},
+	{"dispatcher.add",   dispatcher_rpc_add,
+		dispatcher_rpc_add_doc, 0},
 	{0, 0, 0, 0}
 };
 /* clang-format on */

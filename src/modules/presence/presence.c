@@ -145,7 +145,7 @@ int counter =0;
 int pid = 0;
 char prefix='a';
 int startup_time=0;
-str db_url = {0, 0};
+str pres_db_url = {0, 0};
 int expires_offset = 0;
 int pres_cseq_offset = 0;
 uint32_t min_expires= 0;
@@ -204,7 +204,7 @@ static cmd_export_t cmds[]=
 };
 
 static param_export_t params[]={
-	{ "db_url",                 PARAM_STR, &db_url},
+	{ "db_url",                 PARAM_STR, &pres_db_url},
 	{ "presentity_table",       PARAM_STR, &presentity_table},
 	{ "active_watchers_table",  PARAM_STR, &active_watchers_table},
 	{ "watchers_table",         PARAM_STR, &watchers_table},
@@ -279,9 +279,10 @@ static int mod_init(void)
 		return -1;
 	}
 
-	LM_DBG("db_url=%s/%d/%p\n", ZSW(db_url.s), db_url.len,db_url.s);
+	LM_DBG("db_url=%s (len=%d addr=%p)\n", ZSW(pres_db_url.s), pres_db_url.len,
+			pres_db_url.s);
 
-	if(db_url.s== NULL)
+	if(pres_db_url.s== NULL)
 		library_mode= 1;
 
 	EvList= init_evlist();
@@ -333,14 +334,14 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if(db_url.s== NULL)
+	if(pres_db_url.s== NULL)
 	{
 		LM_ERR("database url not set!\n");
 		return -1;
 	}
 
 	/* binding to database module  */
-	if (db_bind_mod(&db_url, &pa_dbf))
+	if (db_bind_mod(&pres_db_url, &pa_dbf))
 	{
 		LM_ERR("Database module not found\n");
 		return -1;
@@ -353,7 +354,7 @@ static int mod_init(void)
 		return -1;
 	}
 
-	pa_db = pa_dbf.init(&db_url);
+	pa_db = pa_dbf.init(&pres_db_url);
 	if (!pa_db)
 	{
 		LM_ERR("Connection to database failed\n");
@@ -363,14 +364,14 @@ static int mod_init(void)
 	/*verify table versions */
 	if((db_check_table_version(&pa_dbf, pa_db, &presentity_table, P_TABLE_VERSION) < 0) ||
 			(db_check_table_version(&pa_dbf, pa_db, &watchers_table, S_TABLE_VERSION) < 0)) {
-		LM_ERR("error during table version check\n");
-		return -1;
+		DB_TABLE_VERSION_ERROR(presentity_table);
+		goto dberror;
 	}
 
 	if(subs_dbmode != NO_DB &&
 			db_check_table_version(&pa_dbf, pa_db, &active_watchers_table, ACTWATCH_TABLE_VERSION) < 0) {
-		LM_ERR("wrong table version for %s\n", active_watchers_table.s);
-		return -1;
+		DB_TABLE_VERSION_ERROR(active_watchers_table);
+		goto dberror;
 	}
 
 	if(subs_dbmode != DB_ONLY) {
@@ -383,12 +384,12 @@ static int mod_init(void)
 		if(subs_htable== NULL)
 		{
 			LM_ERR(" initializing subscribe hash table\n");
-			return -1;
+			goto dberror;
 		}
 		if(restore_db_subs()< 0)
 		{
 			LM_ERR("restoring subscribe info from database\n");
-			return -1;
+			goto dberror;
 		}
 	}
 
@@ -402,13 +403,13 @@ static int mod_init(void)
 		if(pres_htable== NULL)
 		{
 			LM_ERR("initializing presentity hash table\n");
-			return -1;
+			goto dberror;
 		}
 
 		if(pres_htable_restore()< 0)
 		{
 			LM_ERR("filling in presentity hash table from database\n");
-			return -1;
+			goto dberror;
 		}
 	}
 
@@ -436,7 +437,7 @@ static int mod_init(void)
 		if ((pres_notifier_id = shm_malloc(sizeof(int) * pres_notifier_processes)) == NULL)
 		{
 			LM_ERR("allocating shared memory\n");
-			return -1;
+			goto dberror;
 		}
 
 		register_basic_timers(pres_notifier_processes);
@@ -453,7 +454,7 @@ static int mod_init(void)
 		}
 		else {
 			LM_ERR("invalid log facility configured\n");
-			return -1;
+			goto dberror;
 		}
 	}
 	else {
@@ -476,6 +477,11 @@ static int mod_init(void)
 	}
 
 	return 0;
+
+dberror:
+	pa_dbf.close(pa_db);
+	pa_db = NULL;
+	return -1;
 }
 
 /**
@@ -526,9 +532,9 @@ static int child_init(int rank)
 	/* Do not pool the connections where possible when running notifier
 	 * processes. */
 	if (pres_notifier_processes > 0 && pa_dbf.init2)
-		pa_db = pa_dbf.init2(&db_url, DB_POOLING_NONE);
+		pa_db = pa_dbf.init2(&pres_db_url, DB_POOLING_NONE);
 	else
-		pa_db = pa_dbf.init(&db_url);
+		pa_db = pa_dbf.init(&pres_db_url);
 	if (!pa_db)
 	{
 		LM_ERR("child %d: unsuccessful connecting to database\n", rank);
@@ -567,7 +573,7 @@ static void destroy(void)
 {
 	if(subs_htable && subs_dbmode == WRITE_BACK) {
 		/* open database connection */
-		pa_db = pa_dbf.init(&db_url);
+		pa_db = pa_dbf.init(&pres_db_url);
 		if (!pa_db) {
 			LM_ERR("mod_destroy: unsuccessful connecting to database\n");
 		} else

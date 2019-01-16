@@ -170,6 +170,10 @@ static int fill_contact(struct pcontact_info* ci, struct sip_msg* m)
         ci->via_prot = proto;
         ci->aor = cb->contacts->uri;
     }
+    else {
+        LM_ERR("fill_contact(): Unknown first line type: %d\n", m->first_line.type);
+        return -1;
+    }
 
 
     char* srcip = NULL;
@@ -353,15 +357,19 @@ int add_supported_secagree_header(struct sip_msg* m)
 
     if((supported->s = pkg_malloc(supported_sec_agree_len)) == NULL) {
         LM_ERR("Error allcationg pkg memory for supported header str\n");
+        pkg_free(supported);
         return -1;
     }
     memcpy(supported->s, supported_sec_agree, supported_sec_agree_len);
     supported->len = supported_sec_agree_len;
 
     if(cscf_add_header(m, supported, HDR_SUPPORTED_T) != 1) {
+		pkg_free(supported->s);
+		pkg_free(supported);
         LM_ERR("Error adding security header to reply!\n");
         return -1;
     }
+    pkg_free(supported);
 
     return 0;
 }
@@ -401,6 +409,8 @@ int add_security_server_header(struct sip_msg* m, ipsec_t* s)
         pkg_free(sec_header);
         return -1;
     }
+
+    pkg_free(sec_header);
 
     return 0;
 }

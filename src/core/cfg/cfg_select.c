@@ -73,7 +73,7 @@ static int cfg_new_select(str *gname, str *vname, void **group_p, void **var_p)
 	return 0;
 
 error:
-	LM_ERR("not enough memory\n");
+	PKG_MEM_ERROR;
 	if (sel) {
 		if (sel->gname.s) pkg_free(sel->gname.s);
 		if (sel->vname.s) pkg_free(sel->vname.s);
@@ -220,7 +220,12 @@ int select_cfg_var(str *res, select_t *s, struct sip_msg *msg)
 			break;
 
 		case CFG_VAR_STR:
-			memcpy(res, p, sizeof(str));
+			if(p) {
+				memcpy(res, p, sizeof(str));
+			} else {
+				res->s = 0;
+				res->len = 0;
+			}
 			break;
 
 		default:

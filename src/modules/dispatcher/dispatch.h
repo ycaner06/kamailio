@@ -44,7 +44,8 @@
 #define DS_TRYING_DST		2  /*!< temporary trying destination */
 #define DS_DISABLED_DST		4  /*!< admin disabled destination */
 #define DS_PROBING_DST		8  /*!< checking destination */
-#define DS_STATES_ALL		15  /*!< all bits for the states of destination */
+#define DS_NODNSARES_DST	16 /*!< no DNS A/AAAA resolve for host in uri */
+#define DS_STATES_ALL		31 /*!< all bits for the states of destination */
 
 #define ds_skip_dst(flags)	((flags) & (DS_INACTIVE_DST|DS_DISABLED_DST))
 
@@ -67,6 +68,8 @@
 #define DS_XAVP_DST_SKIP_ATTRS	1
 
 #define DS_XAVP_CTX_SKIP_CNT	1
+
+#define DS_IRMODE_NOIPADDR	1
 
 /* clang-format on */
 
@@ -114,8 +117,8 @@ extern str ds_outbound_proxy;
 extern str ds_default_socket;
 extern struct socket_info *ds_default_sockinfo;
 
-int init_data(void);
-int init_ds_db(void);
+int ds_init_data(void);
+int ds_init_db(void);
 int ds_load_list(char *lfile);
 int ds_connect_db(void);
 void ds_disconnect_db(void);
@@ -126,6 +129,7 @@ int ds_select_dst_limit(sip_msg_t *msg, int set, int alg, uint32_t limit,
 		int mode);
 int ds_select_dst(struct sip_msg *msg, int set, int alg, int mode);
 int ds_update_dst(struct sip_msg *msg, int upos, int mode);
+int ds_add_dst(int group, str *address, int flags);
 int ds_update_state(sip_msg_t *msg, int group, str *address, int state);
 int ds_reinit_state(int group, str *address, int state);
 int ds_reinit_state_all(int group, int state);
@@ -185,16 +189,17 @@ typedef struct _ds_latency_stats {
 } ds_latency_stats_t;
 
 typedef struct _ds_dest {
-	str uri;
-	int flags;
-	int priority;
-	int dload;
-	ds_attrs_t attrs;
-	ds_latency_stats_t latency_stats;
-	struct socket_info * sock;
-	struct ip_addr ip_address; 	/*!< IP-Address of the entry */
-	unsigned short int port; 	/*!< Port of the URI */
-	unsigned short int proto; 	/*!< Protocol of the URI */
+	str uri;          /*!< address/uri */
+	int flags;        /*!< flags */
+	int priority;     /*!< priority */
+	int dload;        /*!< load */
+	ds_attrs_t attrs; /*!< the atttributes */
+	ds_latency_stats_t latency_stats; /*!< latency statistics */
+	int irmode;       /*!< internal runtime mode (flags) */
+	struct socket_info *sock; /*!< pointer to local socket */
+	struct ip_addr ip_address; 	/*!< IP of the address */
+	unsigned short int port; 	/*!< port of the URI */
+	unsigned short int proto; 	/*!< protocol of the URI */
 	int message_count;
 	struct _ds_dest *next;
 } ds_dest_t;
@@ -214,11 +219,12 @@ typedef struct _ds_set {
 } ds_set_t;
 
 typedef struct _ds_select_state {
-	int setid;
-	int alg;
-	int umode;
-	uint32_t limit;
-	int cnt;
+	int setid;  /* dispatcher set id (group id) */
+	int alg;    /* algorithm to select destionations */
+	int umode;  /* update mode - push to: r-uri, d-uri, xavp */
+	uint32_t limit; /* limit of destination addresses to be selected */
+	int cnt;    /* output: number of xavps set with destination addresses */
+	int emode;  /* output: update operation was executed or not */
 	sr_xavp_t *lxavp;
 } ds_select_state_t;
 

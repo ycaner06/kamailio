@@ -631,12 +631,16 @@ modparam("dispatcher", "force_dst", 1)
 		<itemizedlist>
 		<listitem>
 			<para>Value 0: If set to 0, only the gateways with state PROBING are tested.
-            After a gateway is probed, the PROBING state is cleared in this mode.</para>
+            After a gateway is probed, the PROBING state is cleared in this mode.
+			This means that no probing will be executed at all only if flag in config file is set to 8/PROBING
+			(please check destination list file syntaxis for more details), it will probe only one time at startup or 
+			after dispatcher reload.</para>
 		</listitem>
 		<listitem>
 			<para>Value 1: If set to 1, all gateways are tested.  If set to 1 and
 			there is a failure of keepalive to an active gateway, then it is
-			set to TRYING state.</para>
+			set to TRYING state. This means that probing will be executed all the time,
+			but you can skip some servers with flag 4 in destination list file, for example.</para>
 		</listitem>
 		<listitem>
 			<para>Value 2: if set to 2, only gateways in inactive state with
@@ -1123,7 +1127,7 @@ modparam("dispatcher", "ds_db_extra_attrs", "socket=socket;pref=prefix")
 				used to control congestion tolerance. When facing congestion the weight of
 				a gateway is lowered by 1 for every ms of estimated congestion, a 'rweight'
 				value of 50 is recommended. See the example "configuring load balancing with
-				congestion detection" bellow.
+				congestion detection" below.
 				</para>
 				<para>
 				The congestion estimation is done using an EWMA (see ds_latency_estimator_alpha).
@@ -1701,8 +1705,23 @@ onreply_route {
 		</para>
         <programlisting  format="linespecific">
 		&sercmd; dispatcher.list
-		</programlisting>
-    </section>
+ ...
+DEST: {
+        URI: sip:192.168.0.1:5060
+        FLAGS: AP
+        PRIORITY: 12
+}
+ ...
+</programlisting>
+		<para>FLAGS consist out of 2 letters. First letter describe status of
+		destination: A-active, I – inactive, T – trying, D – disabled. Second
+		letter might be P or X. P is for probing, so AP means destination
+		is active and it is tested by SIP options continuously. X means that
+		there are no probing or sip pinging. So AX means that destination is
+		assumed as active and it is not tested by SIP options. DX
+		respectively is disabled destination that is not tested, etc.
+		</para>
+	</section>
 	<section id="dispatcher.r.reload">
 		<title>
 		<function moreinfo="none">dispatcher.reload</function>
@@ -1759,6 +1778,38 @@ onreply_route {
 ...
 </programlisting>
     </section>
+		<section id="dispatcher.r.add">
+		<title>
+		<function moreinfo="none">dispatcher.add</function>
+		</title>
+		<para>
+		Add a destination address to the in-memory dispatcher list. Reloading the dispatcher will remove
+		any destinations that are only added to the in-memory dispatcher list.
+		</para>
+		<para>
+		Name: <emphasis>dispatcher.add</emphasis>
+		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>_group_: destination group id</para></listitem>
+
+			<listitem><para>_address_: address of the destination in the _group_</para></listitem>
+
+			<listitem><para>_flags_ (optional): as described in the list file format,
+			default 0</para></listitem>
+
+		</itemizedlist>
+		<para>
+		Example:
+		</para>
+<programlisting  format="linespecific">
+...
+# prototype: &sercmd; dispatcher.add _group_ _address_ _flags_
+&sercmd; dispatcher.add 2 sip:127.0.0.1:5080
+&sercmd; dispatcher.add 3 sip:127.0.0.1:5075 8
+...
+</programlisting>
+    </section>
 
    </section>
 
@@ -1776,12 +1827,27 @@ onreply_route {
 		</para>
 		<itemizedlist>
 			<listitem>
-			<para>flags (listed by index - can be bitwise mask of values):
-			0 (value 1) - inactive destination; 1 (value 2) - temporary trying
-			destination (in the way to become inactive if it does not reply to
-			keepalives - there is a module parameter to set the threshold of
-			failures); 2 (value 4)  - admin disabled destination; 3 (value 8)
-			- probing destination (sending keep alives);</para>
+			<para>flags - control the mode of using the destination address and
+			sending keepalives. It is a bitwise value that can be built using
+			the folowing flags:
+			<itemizedlist>
+				<listitem><para>1 (bit at index 0 - 1 &lt;&lt;0) - inactive destination</para>
+				</listitem>
+				<listitem><para>2 (bit at index 1 - 1 &lt;&lt;1) - temporary trying
+				destination (in the way to become inactive if it does not reply to
+				keepalives - there is a module parameter to set the threshold of
+				failures)</para>
+				</listitem>
+				<listitem><para>4 (bit at index 2 - 1 &lt;&lt;2) - admin disabled destination</para>
+				</listitem>
+				<listitem><para>8 (bit at index 3 - 1 &lt;&lt;3) - probing destination (sending keep alives);</para>
+				</listitem>
+				<listitem><para>16 (bit at index 4 - 1 &lt;&lt;4) - skip DNS A/AAAA resolve at startup,
+				useful when the hostname of the destination address is a NAPTR or SRV record only.
+				Such addresses cannot be matched anymore with ds_is_from_list(...).</para>
+				</listitem>
+			</itemizedlist>
+			</para>
 			</listitem>
 			<listitem>
 			<para>priority: sets the priority in destination list (based on it

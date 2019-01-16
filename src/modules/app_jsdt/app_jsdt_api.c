@@ -604,7 +604,7 @@ static int jsdt_sr_modf (duk_context *J)
 		if(jsdtv[i]!=NULL) {
 			argv[i] = (char*)pkg_malloc(strlen(jsdtv[i])+1);
 			if(argv[i]==NULL) {
-				LM_ERR("no more pkg\n");
+				PKG_MEM_ERROR;
 				goto error;
 			}
 			strcpy(argv[i], jsdtv[i]);
@@ -758,7 +758,7 @@ int jsdt_sr_init_mod(void)
 	if(_sr_jsdt_reload_version == NULL) {
 		_sr_jsdt_reload_version = (int*)shm_malloc(sizeof(int));
 		if(_sr_jsdt_reload_version == NULL) {
-			LM_ERR("failed to allocated reload version\n");
+			SHM_MEM_ERROR;
 			return -1;
 		}
 		*_sr_jsdt_reload_version = 0;
@@ -1300,6 +1300,16 @@ int sr_kemi_jsdt_exec_func_ex(duk_context *J, sr_kemi_t *ket)
 						&vps[0].s, &vps[1].s, &vps[2].s, &vps[3].s,
 						&vps[4].s);
 				return sr_kemi_jsdt_return_int(J, ket, ret);
+			} else if(ket->ptypes[0]==SR_KEMIP_STR
+					&& ket->ptypes[1]==SR_KEMIP_STR
+					&& ket->ptypes[2]==SR_KEMIP_INT
+					&& ket->ptypes[3]==SR_KEMIP_INT
+					&& ket->ptypes[4]==SR_KEMIP_STR) {
+				ret = ((sr_kemi_fmssnns_f)(ket->func))(env_J->msg,
+						&vps[0].s, &vps[1].s, vps[2].n, vps[3].n,
+						&vps[4].s);
+				return sr_kemi_jsdt_return_int(J, ket, ret);
+
 			} else {
 				LM_ERR("invalid parameters for: %.*s\n",
 						fname->len, fname->s);

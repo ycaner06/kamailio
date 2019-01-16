@@ -30,10 +30,8 @@
 #ifdef PKG_MALLOC
 #include "mem/mem.h"
 #endif
-#ifdef SHM_MEM
 #include "mem/shm_mem.h"
-#endif
-#if defined PKG_MALLOC || defined SHM_MEM
+#if defined PKG_MALLOC
 #include "cfg_core.h"
 #endif
 #include "daemonize.h"
@@ -103,17 +101,12 @@ int init_pt(int proc_no)
 	estimated_proc_no+=proc_no;
 	estimated_fds_no+=calc_common_open_fds_no();
 	/*alloc pids*/
-#ifdef SHM_MEM
 	pt=shm_malloc(sizeof(struct process_table)*estimated_proc_no);
 	process_count = shm_malloc(sizeof(int));
-#else
-	pt=pkg_malloc(sizeof(struct process_table)*estimated_proc_no);
-	process_count = pkg_malloc(sizeof(int));
-#endif
 	process_lock = lock_alloc();
 	process_lock = lock_init(process_lock);
 	if (pt==0||process_count==0||process_lock==0){
-		LM_ERR("out of memory\n");
+		SHM_MEM_ERROR;
 		return -1;
 	}
 	memset(pt, 0, sizeof(struct process_table)*estimated_proc_no);
@@ -125,6 +118,7 @@ int init_pt(int proc_no)
 #endif
 	process_no=0; /*main process number*/
 	pt[process_no].pid=getpid();
+	pt[process_no].rank=PROC_MAIN;
 	memcpy(pt[process_no].desc,"main",5);
 	*process_count=1;
 	return 0;
@@ -322,6 +316,7 @@ int fork_process(int child_id, char *desc, int make_sock)
 		/* record pid twice to avoid the child using it, before
 		 * parent gets a chance to set it*/
 		pt[process_no].pid=getpid();
+		pt[process_no].rank=child_id;
 #else
 		/* wait for parent to get out of critical zone.
 		 * this is actually relevant as the parent updates
@@ -335,10 +330,14 @@ int fork_process(int child_id, char *desc, int make_sock)
 				unix_tcp_sock=sockfd[1];
 			}
 		#endif
-		if ((child_id!=PROC_NOCHLDINIT) && (init_child(child_id) < 0)) {
-			LM_ERR("init_child failed for process %d, pid %d, \"%s\"\n",
-					process_no, pt[process_no].pid, pt[process_no].desc);
-			return -1;
+		if (child_id!=PROC_NOCHLDINIT) {
+			if(init_child(child_id) < 0) {
+				LM_ERR("init_child failed for process %d, pid %d, \"%s\"\n",
+						process_no, pt[process_no].pid, pt[process_no].desc);
+				return -1;
+			}
+		} else {
+			pt[process_no].status = 1;
 		}
 		return pid;
 	} else {
@@ -349,6 +348,7 @@ int fork_process(int child_id, char *desc, int make_sock)
 #endif
 		/* add the process to the list in shm */
 		pt[child_process_no].pid=pid;
+		pt[child_process_no].rank=child_id;
 		if (desc){
 			strncpy(pt[child_process_no].desc, desc, MAX_PT_DESC-1);
 		}
@@ -468,14 +468,19 @@ int fork_tcp_process(int child_id, char *desc, int r, int *reader_fd_1)
 		lock_get(process_lock);
 		lock_release(process_lock);
 #endif
+		pt[process_no].rank=child_id;
 		close(sockfd[0]);
 		unix_tcp_sock=sockfd[1];
 		close(reader_fd[0]);
 		if (reader_fd_1) *reader_fd_1=reader_fd[1];
-		if ((child_id!=PROC_NOCHLDINIT) && (init_child(child_id) < 0)) {
-			LM_ERR("init_child failed for process %d, pid %d, \"%s\"\n",
-				process_no, pt[process_no].pid, pt[process_no].desc);
-			return -1;
+		if (child_id!=PROC_NOCHLDINIT) {
+			if (init_child(child_id) < 0) {
+				LM_ERR("init_child failed for process %d, pid %d, \"%s\"\n",
+						process_no, pt[process_no].pid, pt[process_no].desc);
+				return -1;
+			}
+		} else {
+			pt[process_no].status = 1;
 		}
 		return pid;
 	} else {
@@ -486,6 +491,7 @@ int fork_tcp_process(int child_id, char *desc, int r, int *reader_fd_1)
 #endif
 		/* add the process to the list in shm */
 		pt[child_process_no].pid=pid;
+		pt[child_process_no].rank=child_id;
 		pt[child_process_no].unix_sock=sockfd[0];
 		pt[child_process_no].idx=r;
 		if (desc){
@@ -553,7 +559,6 @@ void mem_dump_pkg_cb(str *gname, str *name)
 }
 #endif
 
-#ifdef SHM_MEM
 /* Dumps shm memory status.
  * fixup function that is called
  * when mem_dump_shm cfg var is set.
@@ -580,4 +585,26 @@ int mem_dump_shm_fixup(void *handle, str *gname, str *name, void **val)
 	}
 	return 0;
 }
-#endif
+
+/* cache if child processes were initialized */
+static int _sr_instance_ready = 0;
+
+/**
+ * return 1 if all child processes were initialized
+ */
+int sr_instance_ready(void)
+{
+	int i;
+	if(_sr_instance_ready==1) {
+		return 1;
+	}
+	for (i=0; i<*process_count; i++) {
+		if(pt[i].rank!=PROC_MAIN && pt[i].rank!=PROC_NOCHLDINIT) {
+			if(pt[i].status==0) {
+				return 0;
+			}
+		}
+	}
+	_sr_instance_ready = 1;
+	return 1;
+}

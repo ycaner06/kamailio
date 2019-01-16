@@ -20,6 +20,7 @@
 *
 */
 
+#include "presence.h"
 #include "presence_dmq.h"
 
 static str pres_dmq_content_type = str_init("application/json");
@@ -112,9 +113,9 @@ static int pres_dmq_init_proc()
 		/* Do not pool the connections where possible when running notifier
 		* processes. */
 		if(pres_notifier_processes > 0 && pa_dbf.init2)
-			pa_db = pa_dbf.init2(&db_url, DB_POOLING_NONE);
+			pa_db = pa_dbf.init2(&pres_db_url, DB_POOLING_NONE);
 		else
-			pa_db = pa_dbf.init(&db_url);
+			pa_db = pa_dbf.init(&pres_db_url);
 
 		if(!pa_db) {
 			LM_ERR("dmq_worker_init: unsuccessful database connection\n");
@@ -193,9 +194,13 @@ presentity_t *pres_parse_json_presentity(srjson_t *in)
 		}
 	}
 
+	if(!p_event) {
+		LM_ERR("presence event not found\n");
+		return NULL;
+	}
+
 	LM_DBG("building presentity from domain: %.*s, user: %.*s, expires: %d, "
-		   "event: "
-		   "%.*s, etag: %.*s, sender: %.*s",
+		   "event: %.*s, etag: %.*s, sender: %.*s",
 			p_domain.len, p_domain.s, p_user.len, p_user.s, p_expires,
 			p_event->name.len, p_event->name.s, p_etag.len, p_etag.s,
 			p_sender.len, p_sender.s);
@@ -301,9 +306,9 @@ int pres_dmq_handle_msg(
 
 	switch(action) {
 		case PRES_DMQ_UPDATE_PRESENTITY:
-			if(update_presentity(NULL, presentity, &p_body, t_new, &sent_reply,
-					   sphere, &cur_etag, &ruid, 0)
-					< 0) {
+			if(presentity==NULL
+					|| update_presentity(NULL, presentity, &p_body, t_new,
+							&sent_reply, sphere, &cur_etag, &ruid, 0) < 0) {
 				goto error;
 			}
 			break;

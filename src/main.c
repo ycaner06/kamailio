@@ -68,10 +68,8 @@
 #include "core/udp_server.h"
 #include "core/globals.h"
 #include "core/mem/mem.h"
-#ifdef SHM_MEM
 #include "core/mem/shm_mem.h"
 #include "core/shm_init.h"
-#endif /* SHM_MEM */
 #include "core/sr_module.h"
 #include "core/timer.h"
 #include "core/parser/msg_parser.h"
@@ -221,14 +219,12 @@ Options:\n\
 void print_ct_constants(void)
 {
 #ifdef ADAPTIVE_WAIT
-	printf("ADAPTIVE_WAIT_LOOPS=%d, ", ADAPTIVE_WAIT_LOOPS);
+	printf("ADAPTIVE_WAIT_LOOPS %d, ", ADAPTIVE_WAIT_LOOPS);
 #endif
 /*
-#ifdef SHM_MEM
-	printf("SHM_MEM_SIZE=%d, ", SHM_MEM_SIZE);
-#endif
+	printf("SHM_MEM_SIZE %dMB, ", SHM_MEM_SIZE);
 */
-	printf("MAX_RECV_BUFFER_SIZE %d"
+	printf("MAX_RECV_BUFFER_SIZE %d,"
 			" MAX_URI_SIZE %d, BUF_SIZE %d, DEFAULT PKG_SIZE %uMB\n",
 		MAX_RECV_BUFFER_SIZE, MAX_URI_SIZE,
 		BUF_SIZE, PKG_MEM_SIZE);
@@ -249,9 +245,7 @@ void print_internals(void)
 	printf("  MAX_URI_SIZE=%d\n", MAX_URI_SIZE);
 	printf("  BUF_SIZE=%d\n", BUF_SIZE);
 	printf("  DEFAULT PKG_SIZE=%uMB\n", PKG_MEM_SIZE);
-#ifdef SHM_MEM
 	printf("  DEFAULT SHM_SIZE=%uMB\n", SHM_MEM_SIZE);
-#endif
 #ifdef ADAPTIVE_WAIT
 	printf("  ADAPTIVE_WAIT_LOOPS=%d\n", ADAPTIVE_WAIT_LOOPS);
 #endif
@@ -505,6 +499,21 @@ char* pgid_file = 0;
 char *sr_memmng_pkg = NULL;
 char *sr_memmng_shm = NULL;
 
+static int *_sr_instance_started = NULL;
+
+/**
+ * return 1 if all child processes were forked
+ * - note: they might still be in init phase (i.e., child init)
+ * - note: see also sr_insance_ready()
+ */
+int sr_instance_started(void)
+{
+	if(_sr_instance_started!=NULL && *_sr_instance_started==1) {
+		return 1;
+	}
+	return 0;
+}
+
 /* call it before exiting; if show_status==1, mem status is displayed */
 void cleanup(int show_status)
 {
@@ -567,7 +576,6 @@ void cleanup(int show_status)
 		}
 	}
 #endif
-#ifdef SHM_MEM
 	if (pt) shm_free(pt);
 	pt=0;
 	if (show_status && memlog <= cfg_get(core, core_cfg, debug)){
@@ -582,7 +590,6 @@ void cleanup(int show_status)
 	}
 	/* zero all shmem alloc vars that we still use */
 	shm_destroy_manager();
-#endif
 	destroy_lock_ops();
 	if (pid_file) unlink(pid_file);
 	if (pgid_file) unlink(pgid_file);
@@ -714,7 +721,6 @@ void handle_sigs(void)
 			}
 		}
 #endif
-#ifdef SHM_MEM
 		if (memlog <= cfg_get(core, core_cfg, debug)){
 			if (cfg_get(core, core_cfg, mem_summary) & 2) {
 				LOG(memlog, "Memory status (shm):\n");
@@ -725,7 +731,6 @@ void handle_sigs(void)
 				shm_sums();
 			}
 		}
-#endif
 			break;
 
 		case SIGCHLD:
@@ -978,8 +983,11 @@ static struct name_lst* mk_name_lst_elem(char* name, int name_len, int flags)
 		l->name[name_len]=0;
 		l->flags=flags;
 		l->next=0;
+		return l;
+	} else {
+		PKG_MEM_ERROR;
+		return 0;
 	}
-	return l;
 }
 
 
@@ -1260,6 +1268,14 @@ int main_loop(void)
 	int nrprocs;
 	int woneinit;
 
+	if(_sr_instance_started == NULL) {
+		_sr_instance_started = shm_malloc(sizeof(int));
+		if(_sr_instance_started == NULL) {
+			SHM_MEM_ERROR;
+			goto error;
+		}
+		*_sr_instance_started = 0;
+	}
 	/* one "main" process and n children handling i/o */
 	if (dont_fork){
 #ifdef STATS
@@ -1422,6 +1438,7 @@ int main_loop(void)
 			LM_ERR("init_child failed\n");
 			goto error;
 		}
+		*_sr_instance_started = 1;
 		return udp_rcv_loop();
 	}else{ /* fork: */
 
@@ -1736,6 +1753,8 @@ int main_loop(void)
 		cfg_child_no_cb_init();
 		cfg_ok=1;
 
+		*_sr_instance_started = 1;
+
 #ifdef EXTRA_DEBUG
 		for (r=0; r<*process_count; r++){
 			fprintf(stderr, "% 3d   % 5d - %s\n", r, pt[r].pid, pt[r].desc);
@@ -1889,6 +1908,10 @@ int main(int argc, char** argv)
 					log_color=1;
 					break;
 			case 'M':
+					if (optarg == NULL) {
+						fprintf(stderr, "bad private mem size\n");
+						goto error;
+					}
 					pkg_mem_size=strtol(optarg, &tmp, 10) * 1024 * 1024;
 					if (tmp &&(*tmp)){
 						fprintf(stderr, "bad private mem size number: -M %s\n",
@@ -2458,10 +2481,8 @@ try_again:
 	 *  Note: shm can now be initialized when parsing the config script, that's
 	 *  why checking for a prior initialization is needed.
 	 * --andrei */
-#ifdef SHM_MEM
 	if (!shm_initialized() && init_shm()<0)
 		goto error;
-#endif /* SHM_MEM */
 	pkg_print_manager();
 	shm_print_manager();
 	if (init_atomic_ops()==-1)
@@ -2615,8 +2636,8 @@ try_again:
 	 * function being called before this point may rely on the
 	 * number of processes !
 	 */
-	LM_DBG("Expect (at least) %d kamailio processes in your process list\n",
-			get_max_procs());
+	LM_INFO("processes (at least): %d - shm size: %lu - pkg size: %lu\n",
+			get_max_procs(), shm_mem_size, pkg_mem_size);
 
 #if defined USE_DNS_CACHE && defined USE_DNS_CACHE_STATS
 	if (init_dns_cache_stats(get_max_procs())<0){

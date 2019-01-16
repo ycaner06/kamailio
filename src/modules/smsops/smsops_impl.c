@@ -566,11 +566,13 @@ int decode_3gpp_sms(struct sip_msg *msg) {
 							if(udh_read + ie->data.len + 2 /* two octets are read so far */ > udh_len) {
 								LM_ERR("IE Lenght for IE id %d is bigger than the remaining User-Data element!\n",
 																									ie->identifier);
+								pkg_free(ie);
 								return -1;
 							}
 
 							if(ie->identifier == TP_UDH_IE_CONCAT_SM_8BIT_REF) {
 								if(contains_8bit_refnum) {
+									pkg_free(ie);
 									LM_ERR("IE Concatenated Short Message 8bit Reference occured more than once in UDH\n");
 									return -1;
 								}
@@ -584,6 +586,7 @@ int decode_3gpp_sms(struct sip_msg *msg) {
 							else { /* Unsupported IE, save it as binary */
 								ie->data.s = pkg_malloc(ie->data.len);
 								if(ie->data.s == NULL) {
+									pkg_free(ie);
 									LM_ERR("no more pkg\n");
 									return -1;
 								}

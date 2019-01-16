@@ -36,9 +36,9 @@ EXTRA_EXCLUDED_MODULES=bdb dbtext oracle pa iptrtpproxy mi_xmlrpc geoip2 phonenu
 PACKAGE_GROUPS=mysql postgres berkeley unixodbc radius presence \
 			   ldap xml perl utils lua memcached \
 			   snmpstats carrierroute xmpp cpl redis python geoip \
-			   sqlite json mono ims sctp java \
+			   sqlite json mono ruby ims sctp java \
 			   tls outbound websocket autheph dnssec kazoo cnxcc \
-			   erlang systemd rabbitmq
+			   erlang systemd rabbitmq python3
 
 # module groups to be packaged onto kamailio-extra-modules
 EXTRA_GROUPS=gzcompress uuid ev jansson http_async

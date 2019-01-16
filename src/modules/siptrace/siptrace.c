@@ -426,8 +426,9 @@ static int child_init(int rank)
 		if(db_check_table_version(
 				   &db_funcs, db_con, &siptrace_table, SIP_TRACE_TABLE_VERSION)
 				< 0) {
-			LM_ERR("error during table version check\n");
+			DB_TABLE_VERSION_ERROR(siptrace_table);
 			db_funcs.close(db_con);
+			db_con = 0;
 			return -1;
 		}
 	}
@@ -1136,7 +1137,7 @@ static void trace_onreply_in(struct cell *t, int type, struct tmcb_params *ps)
 	siptrace_data_t sto;
 	sip_msg_t *msg;
 	sip_msg_t *req;
-	char statusbuf[8];
+	char statusbuf[INT2STR_MAX_LEN];
 
 	if(t == NULL || t->uas.request == 0 || ps == NULL) {
 		LM_DBG("no uas request, local transaction\n");
@@ -1170,8 +1171,11 @@ static void trace_onreply_in(struct cell *t, int type, struct tmcb_params *ps)
 
 	sto.method = get_cseq(msg)->method;
 
-	strcpy(statusbuf, int2str(ps->code, &sto.status.len));
-	sto.status.s = statusbuf;
+	sto.status.s = int2strbuf(ps->code, statusbuf, INT2STR_MAX_LEN, &sto.status.len);
+	if(sto.status.s == 0) {
+		LM_ERR("failure to get the status string\n");
+		return;
+	}
 
 	sto.fromip.len = snprintf(sto.fromip_buff, SIPTRACE_ADDR_MAX, "%s:%s:%d",
 			siptrace_proto_name(msg->rcv.proto),
@@ -1218,7 +1222,7 @@ static void trace_onreply_out(struct cell *t, int type, struct tmcb_params *ps)
 	struct sip_msg *msg;
 	struct sip_msg *req;
 	struct ip_addr to_ip;
-	char statusbuf[8];
+	char statusbuf[INT2STR_MAX_LEN];
 	dest_info_t *dst;
 
 	if(t == NULL || t->uas.request == 0 || ps == NULL) {
@@ -1293,8 +1297,11 @@ static void trace_onreply_out(struct cell *t, int type, struct tmcb_params *ps)
 		}
 	}
 
-	strcpy(statusbuf, int2str(ps->code, &sto.status.len));
-	sto.status.s = statusbuf;
+	sto.status.s = int2strbuf(ps->code, statusbuf, INT2STR_MAX_LEN, &sto.status.len);
+	if(sto.status.s == 0) {
+		LM_ERR("failure to get the status string\n");
+		return;
+	}
 
 	memset(&to_ip, 0, sizeof(struct ip_addr));
 	dst = ps->dst;
@@ -1341,7 +1348,7 @@ static void trace_sl_onreply_out(sl_cbp_t *slcbp)
 	siptrace_data_t sto;
 	sip_msg_t *msg;
 	ip_addr_t to_ip;
-	char statusbuf[5];
+	char statusbuf[INT2STR_MAX_LEN];
 
 	if(slcbp == NULL || slcbp->req == NULL) {
 		LM_ERR("bad parameters\n");
@@ -1385,8 +1392,11 @@ static void trace_sl_onreply_out(sl_cbp_t *slcbp)
 		}
 	}
 
-	strcpy(statusbuf, int2str(slcbp->code, &sto.status.len));
-	sto.status.s = statusbuf;
+	sto.status.s = int2strbuf(slcbp->code, statusbuf, INT2STR_MAX_LEN, &sto.status.len);
+	if(sto.status.s == 0) {
+		LM_ERR("failure to get the status string\n");
+		return;
+	}
 
 	memset(&to_ip, 0, sizeof(struct ip_addr));
 	if(slcbp->dst == 0) {

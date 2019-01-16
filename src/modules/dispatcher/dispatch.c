@@ -173,9 +173,9 @@ int ds_hash_load_destroy(void)
 }
 
 /**
- * Recursivly print ds_set
+ * Recursivly iterate over ds_set and execute callback
  */
-void ds_log_set(ds_set_t *node)
+void ds_iter_set(ds_set_t *node, void (*ds_action_cb)(ds_set_t *node, int i))
 {
 	if(!node)
 		return;
@@ -183,16 +183,31 @@ void ds_log_set(ds_set_t *node)
 	int i;
 
 	for(i = 0; i < 2; ++i)
-		ds_log_set(node->next[i]);
+		ds_iter_set(node->next[i], ds_action_cb);
 
 	for(i = 0; i < node->nr; i++) {
-		LM_DBG("dst>> %d %.*s %d %d (%.*s,%d,%d,%d)\n", node->id,
-				node->dlist[i].uri.len, node->dlist[i].uri.s,
-				node->dlist[i].flags, node->dlist[i].priority,
-				node->dlist[i].attrs.duid.len, node->dlist[i].attrs.duid.s,
-				node->dlist[i].attrs.maxload, node->dlist[i].attrs.weight,
-				node->dlist[i].attrs.rweight);
+		ds_action_cb(node, i);
 	}
+
+	return;
+}
+
+void ds_log_dst_cb(ds_set_t *node, int i)
+{
+	LM_DBG("dst>> %d %.*s %d %d (%.*s,%d,%d,%d)\n", node->id,
+		node->dlist[i].uri.len, node->dlist[i].uri.s,
+		node->dlist[i].flags, node->dlist[i].priority,
+		node->dlist[i].attrs.duid.len, node->dlist[i].attrs.duid.s,
+		node->dlist[i].attrs.maxload, node->dlist[i].attrs.weight,
+		node->dlist[i].attrs.rweight);
+}
+
+/**
+ * Recursivly print ds_set
+ */
+void ds_log_set(ds_set_t *node)
+{
+	ds_iter_set(node, &ds_log_dst_cb);
 
 	return;
 }
@@ -213,7 +228,7 @@ int ds_log_sets(void)
 /**
  *
  */
-int init_data(void)
+int ds_init_data(void)
 {
 	int *p;
 
@@ -424,11 +439,17 @@ ds_dest_t *pack_dest(str iuri, int flags, int priority, str *attrs)
 	/* Do a DNS-Lookup for the Host-Name: */
 	he = resolvehost(hn);
 	if(he == 0) {
-		LM_ERR("could not resolve %.*s\n", puri.host.len, puri.host.s);
-		goto err;
+		if(dp->flags & DS_NODNSARES_DST) {
+			dp->irmode |= DS_IRMODE_NOIPADDR;
+		} else {
+			LM_ERR("could not resolve %.*s (missing no-probing flag?!?)\n",
+					puri.host.len, puri.host.s);
+			goto err;
+		}
+	} else {
+		/* Store hostent in the dispatcher structure */
+		hostent2ip_addr(&dp->ip_address, he, 0);
 	}
-	/* Free the hostname */
-	hostent2ip_addr(&dp->ip_address, he, 0);
 
 	/* Copy the port out of the URI */
 	dp->port = puri.port_no;
@@ -864,7 +885,7 @@ void ds_disconnect_db(void)
 }
 
 /*! \brief Initialize and verify DB stuff*/
-int init_ds_db(void)
+int ds_init_db(void)
 {
 	int ret;
 
@@ -2181,6 +2202,7 @@ int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
 					idx->dlist[hash].uri.len, idx->dlist[hash].uri.s);
 			return -1;
 		}
+		rstate->emode = 1;
 	}
 
 	LM_DBG("selected [%d-%d-%d/%d] <%.*s>\n", rstate->alg, rstate->setid,
@@ -2286,7 +2308,7 @@ int ds_update_dst(struct sip_msg *msg, int upos, int mode)
 	}
 
 	rxavp = xavp_get(&ds_xavp_dst, NULL);
-	if(rxavp == NULL) {
+	if(rxavp == NULL || rxavp->val.type != SR_XTYPE_XAVP) {
 		LM_DBG("no xavp with previous destination record\n");
 		return -1;
 	}
@@ -2297,12 +2319,14 @@ int ds_update_dst(struct sip_msg *msg, int upos, int mode)
 		xavp_rm(rxavp, NULL);
 
 		rxavp = xavp_get(&ds_xavp_dst, NULL);
-		if(rxavp == NULL) {
+		if(rxavp == NULL || rxavp->val.type != SR_XTYPE_XAVP) {
 			LM_DBG("no xavp with next destination record\n");
 			return -1;
 		}
 	}
 
+	/* retrieve attributes from sub list */
+	rxavp = rxavp->val.v.xavp;
 	lxavp = xavp_get(&ds_xavp_dst_sock, rxavp);
 	if(lxavp!=NULL && lxavp->val.type==SR_XTYPE_VPTR) {
 		LM_DBG("socket enforced in next destination record\n");
@@ -2337,6 +2361,54 @@ int ds_update_dst(struct sip_msg *msg, int upos, int mode)
 	}
 
 	return 1;
+}
+
+/* callback for adding nodes based on index */
+void ds_add_dest_cb(ds_set_t *node, int i)
+{
+	int setn;
+	add_dest2list(node->id, node->dlist[i].uri, node->dlist[i].flags, node->dlist[i].priority,
+		&node->dlist[i].attrs.body, *next_idx, &setn);
+	return;
+}
+
+/* add dispatcher entry to in-memory dispatcher list */
+int ds_add_dst(int group, str *address, int flags)
+{
+	int setn, priority;
+	str attrs;
+
+	setn = _ds_list_nr;
+	priority = 0;
+	attrs.s = 0;
+	attrs.len = 0;
+
+	*next_idx = (*crt_idx + 1) % 2;
+	ds_avl_destroy(&ds_lists[*next_idx]);
+
+	// add all existing destinations
+	ds_iter_set(_ds_list, &ds_add_dest_cb);
+
+	// add new destination
+	if(add_dest2list(group, *address, flags, priority, &attrs,
+		*next_idx, &setn) != 0)
+		LM_WARN("unable to add destination %.*s to set %d", address->len, address->s, group);
+
+	if(reindex_dests(ds_lists[*next_idx]) != 0) {
+		LM_ERR("error on reindex\n");
+		goto error;
+	}
+
+	_ds_list_nr = setn;
+	*crt_idx = *next_idx;
+	ds_ht_clear_slots(_dsht_load);
+	ds_log_sets();
+	return 0;
+
+error:
+	ds_avl_destroy(&ds_lists[*next_idx]);
+	*next_idx = *crt_idx;
+	return -1;
 }
 
 int ds_mark_dst(struct sip_msg *msg, int state)
@@ -2954,8 +3026,8 @@ int ds_is_addr_from_list(sip_msg_t *_m, int group, str *uri, int mode)
 
 
 	if(group == -1) {
-		rc = ds_is_addr_from_set_r(
-				_m, pipaddr, tport, tproto, _ds_list, mode, 1);
+		rc = ds_is_addr_from_set_r(_m, pipaddr, tport, tproto, _ds_list,
+				mode, 1);
 	} else {
 		list = ds_avl_find(_ds_list, group);
 		if(list) {

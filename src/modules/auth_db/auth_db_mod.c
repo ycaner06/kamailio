@@ -303,11 +303,13 @@ static int auth_fixup(void** param, int param_no)
 		if(version_table_check!=0
 				&& db_check_table_version(&auth_dbf, dbh, &name,
 					TABLE_VERSION) < 0) {
-			LM_ERR("error during table version check.\n");
+			DB_TABLE_VERSION_ERROR(name);
 			auth_dbf.close(dbh);
+			dbh = 0;
 			return -1;
 		}
 		auth_dbf.close(dbh);
+		dbh = 0;
 	}
 	return 0;
 }
