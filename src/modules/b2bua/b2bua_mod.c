@@ -84,7 +84,7 @@ static int mod_init(void);
 static int w_b2bua_send(sip_msg_t *msg);
 static int b2b_msg_received(sr_event_param_t *evp);
 void b2b_response_cb(struct cell* t, int type, struct tmcb_params* ps);
-
+struct depo *get_root(void);
 
 static param_export_t params[]={
 	{"mask_key",		PARAM_STR, &b2b_mask_key},
@@ -117,11 +117,22 @@ struct module_exports exports= {
 	0                /* module destroy function */
 };
 
-
+typedef struct depo {
+	str callid;
+	str fromtag;
+	struct depo *next;
+} depo_t;
 
 /**
  * init module function
  */
+
+#ifndef WITH_DEPO
+#define WITH_DEPO
+depo_t *depocuk=NULL;
+ int xy =0;
+#endif
+
 static int mod_init(void)
 {
 	if(faked_msg_init()<0) {
@@ -133,6 +144,9 @@ static int mod_init(void)
 		LM_ERR("can't load TM API\n");
 		return -1;
 	}
+LM_ERR("MODINIT\n");
+	//depocuk = (struct depo *)pkg_malloc(sizeof(struct depo ));
+	//memset(depocuk,'0',sizeof(depo_t));
 
 	sr_event_register_cb(SREV_NET_DATA_IN,  b2b_msg_received);
 
@@ -142,12 +156,16 @@ static int mod_init(void)
 static int w_b2bua_send(sip_msg_t *msg)
 {
 	uac_req_t uac_req;
+	struct to_body *from_b;
 	str headers = {0, 0};
 	str method = str_init("INVITE");
 	str to_header = str_init("sip:deneme@192.168.1.39");
 	str from_header = str_init("sip:yc@192.168.1.39");
-	str next_hop = str_init("sip:192.168.1.39:5061");
-	str ruri = str_init("sip:123@192.168.1.39:5061");
+	str next_hop = str_init("sip:192.168.1.39:5062");
+	str ruri = str_init("sip:123@192.168.1.39:5062");
+	struct depo *mydepo;
+
+	int *c;
 
 	LM_ERR("Giriş ok\r\n");
 	if (parse_msg(msg->buf, msg->len, msg)!=0)
@@ -206,6 +224,65 @@ static int w_b2bua_send(sip_msg_t *msg)
 
 	LM_ERR("Kontroller ok \r\n");
 
+	if(msg->callid){
+		LM_ERR("CALLID %.*s \r\n",msg->callid->body.len,msg->callid->body.s);
+	}
+
+
+	if(msg->from->parsed){
+		from_b = msg->from->parsed;
+
+		LM_ERR("FROM TAG %.*s \r\n",from_b->tag_value.len,from_b->tag_value.s);
+	}
+
+	mydepo = (struct depo *)pkg_malloc(sizeof(struct depo));
+
+	if(mydepo == 0) {
+		PKG_MEM_ERROR;
+		return 1;
+	}
+
+	memset(mydepo,'0',sizeof(depo_t));
+
+	LM_ERR("11111 \r\n");
+
+	mydepo->callid.s =(char *)pkg_malloc(msg->callid->body.len);
+	mydepo->fromtag.s =(char *)pkg_malloc(from_b->tag_value.len);
+	/*mydepo->callid.s =msg->callid->body.s;
+	mydepo->callid.len =msg->callid->body.len;
+*/
+if(mydepo->callid.s){
+	LM_ERR("XXXXX1X %p \r\n",mydepo->callid.s);
+	LM_ERR("XXXXX2X %p \r\n",msg->callid->body.s);
+	LM_ERR("XXXXX1X %p \r\n",mydepo->fromtag.s);
+
+}
+
+	memcpy(mydepo->callid.s,msg->callid->body.s,msg->callid->body.len);
+	LM_ERR("222222 \r\n");
+	//mydepo->fromtag.s =from_b->tag_value.s;
+//	mydepo->fromtag.len =from_b->tag_value.len;
+	memcpy(mydepo->fromtag.s,from_b->tag_value.s,from_b->tag_value.len);
+	LM_ERR("33333 \r\n");
+
+	mydepo->next = depocuk;
+	LM_ERR("444444 \r\n");
+
+
+
+	depocuk = mydepo;
+	LM_ERR("55555 %p \r\n",mydepo);
+	LM_ERR("66666 %p \r\n",depocuk);
+	c = &xy;
+	*c=20;
+	LM_ERR("7777777 %p \r\n",&xy);
+	LM_ERR("8888888 %d \r\n",xy);
+	LM_ERR("9999999 %d \r\n",*c);
+	LM_ERR("5413123 %p \r\n",c);
+
+
+
+
   if(msg->first_line.type==SIP_REQUEST) {
 			headers.len=b2b_contact_uri.len;
 
@@ -240,16 +317,50 @@ static int w_b2bua_send(sip_msg_t *msg)
 
 void b2b_response_cb(struct cell* t, int type, struct tmcb_params* ps){
 
+	struct depo *dep = get_root();
 	LM_ERR("b2b response cb \r\n");
+	LM_ERR("11111 %p\r\n",dep);
+	if(dep){
+		LM_ERR("22222 %p\r\n",dep);
+		if(dep->callid.len>0 && dep->callid.s){
+			LM_ERR("333333 %p \r\n",dep->callid.s);
 
+			LM_ERR("Depocuk %.*s\r\n",dep->callid.len,dep->callid.s);}
+		}
 
 
 }
 
+struct depo *get_root(void){
+
+	return depocuk;
+}
+
 static int b2b_msg_received(sr_event_param_t *evp)
 {
+	sip_msg_t msg;
+	str *obuf;
+	char *nbuf = NULL;
+	int direction;
+	int dialog;
 
-	LM_ERR("CEVAPLAR \r\n");
+	struct depo *dep = get_root();
+	LM_ERR("RECEIVED %d\r\n",xy);
+	LM_ERR("7777777 %p \r\n",&xy);
+
+
+	obuf = (str*)evp->data;
+	memset(&msg, 0, sizeof(sip_msg_t));
+	msg.buf = obuf->s;
+	msg.len = obuf->len;
+	LM_ERR("11111 %p\r\n",dep);
+	if(dep){
+		LM_ERR("22222 %p\r\n",dep);
+		if(dep->callid.len>0 && dep->callid.s){
+			LM_ERR("333333 %p \r\n",dep->callid.s);
+
+			LM_ERR("Depocuk %.*s\r\n",dep->callid.len,dep->callid.s);}
+		}
 
 return 1;
 }
