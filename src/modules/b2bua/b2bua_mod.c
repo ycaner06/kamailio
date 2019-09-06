@@ -68,7 +68,8 @@ str b2b_via_param_val = str_init("1");
 str b2b_callid_prefix = str_init("b2bua");
 str b2b_default_socket       = STR_NULL;
 int b2b_sanity_checks = 0;
-str b2b_contact_uri = str_init("Contact : <sip:b2b@192.168.1.39:5060>\r\n");
+str b2b_contact_header = str_init("Contact : <sip:b2b@192.168.1.39:5060>\r\n");
+str b2b_contact_uri = str_init("<sip:b2b@192.168.1.39:5060>");
 str b2b_max_fwds_hdr = str_init("Max-Forwards: 10\r\n");
 
 
@@ -91,6 +92,10 @@ int b2b_sip_rw(char *s, int len);
 int b2b_prepare_msg(sip_msg_t *msg);
 char* b2b_msg_update(sip_msg_t *msg, unsigned int *olen);
 int b2b_recollect_callid(sip_msg_t *msg, str *callid);
+int b2b_recollect_contact(sip_msg_t *msg);
+int b2b_recollect_cseq(sip_msg_t *msg , str *cseq);
+int b2b_recollect_from_body(sip_msg_t *msg , str *from_body);
+int b2b_recollect_totag(sip_msg_t *msg , str *totag ,str *to_body);
 
 static param_export_t params[]={
 	{"mask_key",		PARAM_STR, &b2b_mask_key},
@@ -98,7 +103,7 @@ static param_export_t params[]={
 	{"callid_prefix",	PARAM_STR, &b2b_callid_prefix},
 	{"sanity_checks",	PARAM_INT, &b2b_sanity_checks},
 	{"b2b_default_socket",	PARAM_STR, &b2b_default_socket},
-	{"b2b_contact_uri",	PARAM_STR, &b2b_contact_uri},
+	{"b2b_contact_header",	PARAM_STR, &b2b_contact_header},
 	{0,0,0}
 };
 
@@ -126,7 +131,11 @@ struct module_exports exports= {
 typedef struct depo {
 	str callid;
 	str fromtag;
+	str from_body;
+	str to_body;
 	str via0;
+	str cseq;
+	str cseq_method;
 
 	struct depo *next;
 } depo_t;
@@ -232,6 +241,10 @@ static int w_b2bua_send(sip_msg_t *msg)
 		LM_ERR("CALLID %.*s \r\n",msg->callid->body.len,msg->callid->body.s);
 	}
 
+	if(msg->cseq){
+		LM_ERR("CSEQ %.*s \r\n",msg->cseq->body.len,msg->cseq->body.s);
+	}
+
 
 	if(msg->from->parsed){
 		from_b = msg->from->parsed;
@@ -239,6 +252,13 @@ static int w_b2bua_send(sip_msg_t *msg)
 		LM_ERR("FROM TAG %.*s \r\n",from_b->tag_value.len,from_b->tag_value.s);
 	}
 
+	/*
+	if(msg->to->parsed){
+		to_b = msg->to->parsed;
+
+		LM_ERR("TO TAG %.*s \r\n",to_b->tag_value.len,to_b->tag_value.s);
+	}
+*/
 	mydepo = (struct depo *)shm_malloc(sizeof(struct depo));
 
 	if(mydepo == 0) {
@@ -253,7 +273,12 @@ static int w_b2bua_send(sip_msg_t *msg)
 
 	mydepo->callid.s =(char *)shm_malloc(msg->callid->body.len);
 	mydepo->fromtag.s =(char *)shm_malloc(from_b->tag_value.len);
+	mydepo->from_body.s =(char *)shm_malloc(msg->from->body.len);
+	mydepo->to_body.s =(char *)shm_malloc(msg->to->body.len);
+
+
 	mydepo->via0.s =(char *)shm_malloc(msg->h_via1->body.len);
+	mydepo->cseq.s =(char *)shm_malloc(msg->cseq->body.len);
 	/*mydepo->callid.s =msg->callid->body.s;
 	mydepo->callid.len =msg->callid->body.len;
 */
@@ -273,9 +298,18 @@ if(mydepo->callid.s){
 
 
 	memcpy(mydepo->via0.s,msg->h_via1->body.s,msg->h_via1->body.len);
+
+	memcpy(mydepo->cseq.s,msg->cseq->body.s,msg->cseq->body.len);
+	memcpy(mydepo->from_body.s,msg->from->body.s,msg->from->body.len);
+	memcpy(mydepo->to_body.s,msg->to->body.s,msg->to->body.len);
+
+
 	mydepo->via0.len = msg->h_via1->body.len;
 	mydepo->fromtag.len=from_b->tag_value.len;
 	mydepo->callid.len = msg->callid->body.len;
+	mydepo->cseq.len = msg->cseq->body.len;
+	mydepo->from_body.len = msg->from->body.len;
+	mydepo->to_body.len = msg->to->body.len;
 	mydepo->next = depocuk;
 
 	LM_ERR("444444 \r\n");
@@ -287,7 +321,7 @@ if(mydepo->callid.s){
 
 
   if(msg->first_line.type==SIP_REQUEST) {
-			headers.len=b2b_contact_uri.len;
+			headers.len=b2b_contact_header.len;
 
 			headers.s = pkg_malloc(headers.len);
 			 if (!headers.s) {
@@ -299,7 +333,7 @@ if(mydepo->callid.s){
 			 memset(headers.s,0,headers.len);
 			 headers.len=0;
 
-			 STR_APPEND(headers,b2b_contact_uri);
+			 STR_APPEND(headers,b2b_contact_header);
 		//	STR_APPEND(headers,b2b_max_fwds_hdr);
 
 			set_uac_req(&uac_req, &method, &headers, NULL, 0,
@@ -346,6 +380,7 @@ static int b2b_msg_received(sr_event_param_t *evp)
   char *nbuf = NULL;
 	struct ip_addr hope;
 	struct depo *dep = depocuk;
+	struct to_body* to_header;
 	str hopestr = str_init("192.168.1.39");
 
 
@@ -373,15 +408,7 @@ static int b2b_msg_received(sr_event_param_t *evp)
 			return -1;
 	}
 
-	if(dep){
-		LM_ERR("22222 %p\r\n",dep);
-		if(dep->callid.len>0 && dep->callid.s){
-			LM_ERR("333333 %p \r\n",dep->callid.s);
 
-			LM_ERR("Depocuk [%.*s][%d]\r\n",dep->callid.len,dep->callid.s,dep->callid.len);
-			LM_ERR("VIA [%.*s][%d]\r\n",dep->via0.len,dep->via0.s,dep->via0.len);
-			}
-		}
 		if(msg.first_line.type==SIP_REQUEST)
 		{
 				return 0;
@@ -393,6 +420,15 @@ static int b2b_msg_received(sr_event_param_t *evp)
 
 			LM_INFO("msg after collect via [%.*s] \r\n",msg.len,msg.buf);
 			b2b_recollect_callid(&msg,&dep->callid);
+			b2b_recollect_contact(&msg);
+			b2b_recollect_cseq(&msg,&dep->cseq);
+			b2b_recollect_from_body(&msg,&dep->from_body);
+
+			to_header=get_to(&msg);
+
+
+			b2b_recollect_totag(&msg , &to_header->tag_value , &dep->to_body);
+
 
 			nbuf = b2b_msg_update(&msg, (unsigned int*)&obuf->len);
 
@@ -424,6 +460,94 @@ char* b2b_msg_update(sip_msg_t *msg, unsigned int *olen)
 }
 
 
+int b2b_recollect_cseq(sip_msg_t *msg , str *cseq){
+
+	struct lump* l;
+
+	if(msg->cseq==NULL)
+	{
+		LM_ERR("cannot get Contact header\n");
+		return -1;
+	}
+
+	l=del_lump(msg, msg->cseq->body.s-msg->buf, msg->cseq->body.len, 0);
+	if (l==0)
+	{
+		LM_ERR("failed deleting Contact\n");
+		return -1;
+	}
+	if (insert_new_lump_after(l, cseq->s, cseq->len, 0)==0) {
+		LM_ERR("could not insert Contact lump\n");
+		return -1;
+	}
+	return 0;
+}
+
+int b2b_recollect_totag(sip_msg_t *msg , str *totag ,str *to_body){
+
+	struct lump* l;
+	str tmp_to_body={0,0};
+	str noktali_virgul=str_init(";");
+
+	if(msg->to==NULL)
+	{
+		LM_ERR("cannot get TO header\n");
+		return -1;
+	}
+
+	LM_INFO("Caller tobody [%.*s] \r\n",to_body->len,to_body->s);
+	tmp_to_body.s=(char *)pkg_malloc(to_body->len+totag->len+1);
+	if(!tmp_to_body.s){
+		return -2;
+	}
+	memcpy(tmp_to_body.s,to_body->s,to_body->len);
+	memcpy(&tmp_to_body.s[to_body->len],noktali_virgul.s,noktali_virgul.len);
+	memcpy(&tmp_to_body.s[to_body->len+1],totag->s,totag->len);
+	tmp_to_body.len=to_body->len+totag->len+1;
+
+	LM_INFO("New TO header [%.*s] \r\n",tmp_to_body.len,tmp_to_body.s);
+
+	l=del_lump(msg, msg->to->body.s-msg->buf, msg->to->body.len, 0);
+	if (l==0)
+	{
+		LM_ERR("failed deleting FROm body\n");
+		return -1;
+	}
+
+	if (insert_new_lump_after(l, tmp_to_body.s, tmp_to_body.len, 0)==0) {
+		LM_ERR("could not insert Contact lump\n");
+		return -1;
+	}
+
+	 return 0;
+}
+
+int b2b_recollect_from_body(sip_msg_t *msg , str *from_body){
+
+	struct lump* l;
+
+	if(msg->from==NULL)
+	{
+		LM_ERR("cannot get From tag header\n");
+		return -1;
+	}
+
+
+
+	l=del_lump(msg, msg->from->body.s-msg->buf, msg->from->body.len, 0);
+	if (l==0)
+	{
+		LM_ERR("failed deleting FROm body\n");
+		return -1;
+	}
+	if (insert_new_lump_after(l, from_body->s, from_body->len, 0)==0) {
+		LM_ERR("could not insert Contact lump\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 int recollect_via(sip_msg_t *msg, str *via_body)
 {
@@ -431,7 +555,6 @@ int recollect_via(sip_msg_t *msg, str *via_body)
 	struct via_body *via;
 	struct lump* l;
 	int i;
-	str out;
 	int vlen;
 
 	i=0;
@@ -459,6 +582,32 @@ int recollect_via(sip_msg_t *msg, str *via_body)
 
 	return 0;
 }
+
+
+int b2b_recollect_contact(sip_msg_t *msg)
+{
+	struct lump* l;
+
+	if(msg->callid==NULL)
+	{
+		LM_ERR("cannot get Contact header\n");
+		return -1;
+	}
+
+	l=del_lump(msg, msg->contact->body.s-msg->buf, msg->contact->body.len, 0);
+	if (l==0)
+	{
+		LM_ERR("failed deleting Contact\n");
+		return -1;
+	}
+	if (insert_new_lump_after(l, b2b_contact_uri.s, b2b_contact_uri.len, 0)==0) {
+		LM_ERR("could not insert Contact lump\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 
 
