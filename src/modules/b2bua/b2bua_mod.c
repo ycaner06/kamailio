@@ -90,6 +90,7 @@ int recollect_via(sip_msg_t *msg, str *via_body);
 int b2b_sip_rw(char *s, int len);
 int b2b_prepare_msg(sip_msg_t *msg);
 char* b2b_msg_update(sip_msg_t *msg, unsigned int *olen);
+int b2b_recollect_callid(sip_msg_t *msg, str *callid);
 
 static param_export_t params[]={
 	{"mask_key",		PARAM_STR, &b2b_mask_key},
@@ -391,8 +392,10 @@ static int b2b_msg_received(sr_event_param_t *evp)
 			LM_ERR("Recollect_via sonuc[%d] \r\n",sonuc);
 
 			LM_INFO("msg after collect via [%.*s] \r\n",msg.len,msg.buf);
+			b2b_recollect_callid(&msg,&dep->callid);
 
 			nbuf = b2b_msg_update(&msg, (unsigned int*)&obuf->len);
+
 			if(nbuf){
 				LM_ERR("NBUF [%s]\r\n",nbuf);
 			}
@@ -456,6 +459,33 @@ int recollect_via(sip_msg_t *msg, str *via_body)
 
 	return 0;
 }
+
+
+
+int b2b_recollect_callid(sip_msg_t *msg, str *callid)
+{
+	struct lump* l;
+
+	if(msg->callid==NULL)
+	{
+		LM_ERR("cannot get Call-Id header\n");
+		return -1;
+	}
+
+	l=del_lump(msg, msg->callid->body.s-msg->buf, msg->callid->body.len, 0);
+	if (l==0)
+	{
+		LM_ERR("failed deleting callid\n");
+		return -1;
+	}
+	if (insert_new_lump_after(l, callid->s, callid->len, 0)==0) {
+		LM_ERR("could not insert new lump\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 int b2b_sip_rw(char *s, int len)
 {
