@@ -282,19 +282,11 @@ static int w_b2bua_send(sip_msg_t *msg)
 	/*mydepo->callid.s =msg->callid->body.s;
 	mydepo->callid.len =msg->callid->body.len;
 */
-if(mydepo->callid.s){
-	LM_ERR("XXXXX1X %p \r\n",mydepo->callid.s);
-	LM_ERR("XXXXX2X %p \r\n",msg->callid->body.s);
-	LM_ERR("XXXXX1X %p \r\n",mydepo->fromtag.s);
-
-}
 
 	memcpy(mydepo->callid.s,msg->callid->body.s,msg->callid->body.len);
-	LM_ERR("222222 \r\n");
 	//mydepo->fromtag.s =from_b->tag_value.s;
 //	mydepo->fromtag.len =from_b->tag_value.len;
 	memcpy(mydepo->fromtag.s,from_b->tag_value.s,from_b->tag_value.len);
-	LM_ERR("33333 \r\n");
 
 
 	memcpy(mydepo->via0.s,msg->h_via1->body.s,msg->h_via1->body.len);
@@ -312,12 +304,8 @@ if(mydepo->callid.s){
 	mydepo->to_body.len = msg->to->body.len;
 	mydepo->next = depocuk;
 
-	LM_ERR("444444 \r\n");
 
 	depocuk = mydepo;
-
-	LM_ERR("55555 %p \r\n",mydepo);
-	LM_ERR("66666 %p \r\n",depocuk);
 
 
   if(msg->first_line.type==SIP_REQUEST) {
@@ -393,16 +381,13 @@ static int b2b_msg_received(sr_event_param_t *evp)
 		return -1;
 	}
 
-	LM_ERR("11111 %p\r\n",dep);
-
-
 	obuf = (str*)evp->data;
 	memset(&msg, 0, sizeof(sip_msg_t));
 	msg.buf = obuf->s;
 	msg.len = obuf->len;
 
 
-	LM_ERR("MSG  [%.*s]   \r\n",msg.len,msg.buf);
+	//LM_ERR("MSG  [%.*s]   \r\n",msg.len,msg.buf);
 	if(b2b_prepare_msg(&msg)!=0){
 			LM_ERR("b2b_prepare_msg ERROR   \r\n");
 			return -1;
@@ -415,16 +400,26 @@ static int b2b_msg_received(sr_event_param_t *evp)
 
 		}else{ //reply
 
-			int sonuc = recollect_via(&msg,&dep->via0);
-			LM_ERR("Recollect_via sonuc[%d] \r\n",sonuc);
+			if(msg.first_line.u.reply.statuscode!=200)
+				return -1;
 
-			LM_INFO("msg after collect via [%.*s] \r\n",msg.len,msg.buf);
+
+
+			recollect_via(&msg,&dep->via0);
 			b2b_recollect_callid(&msg,&dep->callid);
 			b2b_recollect_contact(&msg);
 			b2b_recollect_cseq(&msg,&dep->cseq);
 			b2b_recollect_from_body(&msg,&dep->from_body);
 
 			to_header=get_to(&msg);
+			if(!to_header  ){
+				LM_ERR("Couldnt find to header");
+				return -2;
+			}
+
+			LM_INFO("Incoming totag [%.*s]",to_header->tag_value.len,to_header->tag_value.s);
+
+
 
 
 			b2b_recollect_totag(&msg , &to_header->tag_value , &dep->to_body);
@@ -456,7 +451,7 @@ char* b2b_msg_update(sip_msg_t *msg, unsigned int *olen)
 	init_dest_info(&dst);
 	dst.proto = PROTO_UDP;
 	return build_req_buf_from_sip_req(msg,
-			olen, &dst, BUILD_NO_LOCAL_VIA|BUILD_NO_VIA1_UPDATE);
+			olen, &dst, BUILD_NO_PATH|BUILD_NO_LOCAL_VIA|BUILD_NO_VIA1_UPDATE);
 }
 
 
