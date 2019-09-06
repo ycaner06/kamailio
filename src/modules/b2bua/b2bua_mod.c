@@ -365,6 +365,8 @@ static int b2b_msg_received(sr_event_param_t *evp)
 	msg.buf = obuf->s;
 	msg.len = obuf->len;
 
+
+	LM_ERR("MSG  [%.*s]   \r\n",msg.len,msg.buf);
 	if(b2b_prepare_msg(&msg)!=0){
 			LM_ERR("b2b_prepare_msg ERROR   \r\n");
 			return -1;
@@ -386,12 +388,14 @@ static int b2b_msg_received(sr_event_param_t *evp)
 		}else{ //reply
 
 			int sonuc = recollect_via(&msg,&dep->via0);
-			LM_ERR("IT IS A REPLY[%d] \r\n",sonuc);
+			LM_ERR("Recollect_via sonuc[%d] \r\n",sonuc);
+
+			LM_INFO("msg after collect via [%.*s] \r\n",msg.len,msg.buf);
 
 			nbuf = b2b_msg_update(&msg, (unsigned int*)&obuf->len);
-			if(!nbuf==NULL){
+			if(nbuf){
 				LM_ERR("NBUF [%s]\r\n",nbuf);
-			} 
+			}
 
 			if(obuf->len>=BUF_SIZE)
 			{
@@ -434,6 +438,8 @@ int recollect_via(sip_msg_t *msg, str *via_body)
 		{
 				i++;
 				vlen = b2b_sip_rw(via->name.s, via->bsize);
+				LM_ERR("LUMPING [%d]\n", vlen);
+
 				l=del_lump(msg, via->name.s-msg->buf, vlen, 0);
 				if (l==0)
 				{
@@ -491,7 +497,7 @@ int b2b_prepare_msg(sip_msg_t *msg)
 
 	if (parse_headers(msg, HDR_EOH_F, 0)==-1)
 	{
-		LM_DBG("parsing headers failed [[%.*s]]\n",
+		LM_ERR("parsing headers failed [[%.*s]]\n",
 				msg->len, msg->buf);
 		return 2;
 	}
@@ -500,7 +506,7 @@ int b2b_prepare_msg(sip_msg_t *msg)
 	if (parse_headers(msg, HDR_VIA2_F, 0)==-1
 		|| (msg->via2==0) || (msg->via2->error!=PARSE_OK))
 	{
-		LM_DBG("no second via in this message \n");
+		LM_INFO("no second via in this message \n");
 	}
 
 	if(parse_from_header(msg)<0)
