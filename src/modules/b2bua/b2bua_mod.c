@@ -76,6 +76,7 @@ str b2b_via_prefix = {0, 0};
 str b2b_vparam_prefix = str_init("z9hG4bKsr-");
 str b2b_vparam_name = str_init("branch");
 str b2b_ip = str_init("192.168.1.39");
+str b2b_tag_equal = str_init(";tag=");
 str satir_basi = str_init("\r\n");
 
 
@@ -517,11 +518,7 @@ int b2b_insert_local_via(sip_msg_t *msg){
 		LM_ERR("  failed to get anchor\n");
 		return 0;
 	}
-	LM_INFO(" XXXXXXXXX\r\n" );
-
-
 	l = insert_new_lump_before(l, temp_via.s, temp_via.len, HDR_VIA_T);
-	LM_INFO("????? \r\n" );
 
 	if (l==0) {
 		LM_ERR("failed to add before lump\n");
@@ -559,23 +556,21 @@ int b2b_recollect_totag(sip_msg_t *msg , str *totag ,str *to_body){
 
 	struct lump* l;
 	str tmp_to_body={0,0};
-	str noktali_virgul=str_init(";");
 
-	if(msg->to==NULL)
-	{
+	if(msg->to==NULL){
 		LM_ERR("cannot get TO header\n");
 		return -1;
 	}
 
 	LM_INFO("Caller tobody [%.*s] \r\n",to_body->len,to_body->s);
-	tmp_to_body.s=(char *)pkg_malloc(to_body->len+totag->len+1);
+	tmp_to_body.s=(char *)pkg_malloc(to_body->len+totag->len+b2b_tag_equal.len);
 	if(!tmp_to_body.s){
 		return -2;
 	}
 	memcpy(tmp_to_body.s,to_body->s,to_body->len);
-	memcpy(&tmp_to_body.s[to_body->len],noktali_virgul.s,noktali_virgul.len);
-	memcpy(&tmp_to_body.s[to_body->len+1],totag->s,totag->len);
-	tmp_to_body.len=to_body->len+totag->len+1;
+	memcpy(&tmp_to_body.s[to_body->len],b2b_tag_equal.s,b2b_tag_equal.len);
+	memcpy(&tmp_to_body.s[to_body->len+b2b_tag_equal.len],totag->s,totag->len);
+	tmp_to_body.len=to_body->len+totag->len+b2b_tag_equal.len;
 
 	LM_INFO("New TO header [%.*s] \r\n",tmp_to_body.len,tmp_to_body.s);
 

@@ -1988,16 +1988,13 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 		LM_ERR("Error while adjusting Content-Length\n");
 		goto error00;
 	}
-	LM_ERR("111\n");
 
 	if(unlikely(mode&BUILD_NO_LOCAL_VIA))
 		goto after_local_via;
-		LM_ERR("222\n");
 
 	/* create the via header */
 	branch.s=msg->add_to_branch_s;
 	branch.len=msg->add_to_branch_len;
-	LM_ERR("333\n");
 
 	via_anchor=anchor_lump(msg, msg->via1->hdr.s-buf, 0, HDR_VIA_T);
 	if (unlikely(via_anchor==0)) goto error00;
@@ -2018,7 +2015,6 @@ after_local_via:
 			goto error00;  /* free also line_buf */
 		}
 	}
-	LM_ERR("5555\n");
 
 	/* check if rport needs to be updated:
 	 *  - if FL_FORCE_RPORT is set add it (and del. any previous version)
@@ -2032,7 +2028,6 @@ after_local_via:
 			goto error00; /* free everything */
 		}
 	}
-	LM_ERR("666\n");
 
 	/* find out where the offset of the first parameter that should be added
 	 * (after host:port), needed by add receive & maybe rport */
@@ -2050,7 +2045,6 @@ after_local_via:
 			if(send_sock->address.af==AF_INET6) size+=1; /* +1 for ']'*/
 #endif
 	}
-	LM_ERR("7777\n");
 
 	/* if received needs to be added, add anchor after host and add it, or
 	 * overwrite the previous one if already present */
@@ -2088,7 +2082,6 @@ after_local_via:
 		}
 		rport_buf = NULL;
 	}
-	LM_ERR("8888888\n");
 
 after_update_via1:
 	/* add route with path content */
@@ -2131,7 +2124,6 @@ after_update_via1:
 		}
 		path_buf.s = NULL;
 	}
-	LM_ERR("999999\n");
 
 	/* compute new msg len and fix overlapping zones*/
 	new_len=len+body_delta+lumps_len(msg, msg->add_rm, send_info)+via_len;
@@ -2179,7 +2171,6 @@ after_update_via1:
 			new_len+=via_len;
 		}
 	}
-	LM_ERR("10\n");
 
 	/* add via header to the list */
 	/* try to add it before msg. 1st via */
@@ -2208,7 +2199,6 @@ after_update_via1:
 		}
 		goto error00;
 	}
-	LM_ERR("11-11\n");
 
 	offset=s_offset=0;
 	if (msg->new_uri.s){
@@ -2229,7 +2219,6 @@ after_update_via1:
 	/* copy the rest of the message */
 	memcpy(new_buf+offset, buf+s_offset, len-s_offset);
 	new_buf[new_len]=0;
-	LM_ERR("12-12\n");
 
 	/* update the send_info if udp_mtu affected */
 	if (di.proto!=PROTO_NONE) {
@@ -2243,13 +2232,11 @@ after_update_via1:
 		abort();
 	}
 #endif
-LM_ERR("13 \n");
 
 	*returned_len=new_len;
 	return new_buf;
 
 error00:
-LM_ERR("14 \n");
 
 	if (received_buf) pkg_free(received_buf);
 	if (rport_buf) pkg_free(rport_buf);
