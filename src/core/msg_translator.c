@@ -493,7 +493,7 @@ static inline int lump_check_opt(	struct lump *l,
 		case COND_IF_DIFF_REALMS:
 			get_ip_port_proto;
 			/* faster tests first */
-			if ((port==snd_i->send_sock->port_no) && 
+			if ((port==snd_i->send_sock->port_no) &&
 					(proto==snd_i->send_sock->proto) &&
 #ifdef USE_COMP
 					(msg->rcv.comp==snd_i->comp) &&
@@ -544,7 +544,7 @@ static inline int lump_check_opt(	struct lump *l,
 
 /* computes the "unpacked" len of a lump list,
    code moved from build_req_from_req */
-static inline int lumps_len(struct sip_msg* msg, struct lump* lumps, 
+static inline int lumps_len(struct sip_msg* msg, struct lump* lumps,
 								struct dest_info* send_info)
 {
 	int s_offset;
@@ -557,7 +557,7 @@ static inline int lumps_len(struct sip_msg* msg, struct lump* lumps,
 	str* recv_port_str = NULL;
 	int  recv_port_no = 0;
 	struct socket_info* send_sock;
-	
+
 
 #ifdef USE_COMP
 	#define RCVCOMP_LUMP_LEN \
@@ -593,7 +593,7 @@ static inline int lumps_len(struct sip_msg* msg, struct lump* lumps,
 	#define RCVCOMP_LUMP_LEN
 	#define SENDCOMP_LUMP_LEN
 #endif /*USE_COMP */
-	
+
 #define SUBST_LUMP_LEN(subst_l) \
 		switch((subst_l)->u.subst){ \
 			case SUBST_RCV_IP: \
@@ -1471,7 +1471,7 @@ skip_nop_after:
     if (flag == FLAG_MSG_LUMPS_ONLY) {
         new_buf[offset] = '\0';
     }
-#undef RCVCOMP_PARAM_ADD 
+#undef RCVCOMP_PARAM_ADD
 #undef SENDCOMP_PARAM_ADD
 }
 
@@ -1594,7 +1594,7 @@ static inline int adjust_clen(struct sip_msg* msg, int body_delta, int proto)
 					HDR_CONTENTLENGTH_T) == 0)
 			goto error;
 	}
-	
+
 	return 0;
 error:
 	if (clen_buf) pkg_free(clen_buf);
@@ -1916,22 +1916,22 @@ clean:
   * @param msg  - sip message structure, complete with lumps
   * @param returned_len - result length (filled in)
   * @param send_info  - dest_info structure (value/result), contains where the
-  *                     packet will be sent to (it's needed for building a 
+  *                     packet will be sent to (it's needed for building a
   *                     correct via, fill RR lumps a.s.o.). If MTU based
   *                     protocol fall-back is enabled (see flags below),
   *                     send_info->proto might be updated with the new
   *                     protocol.
   *                     msg->msg_flags used:
   *                     - FL_TCP_MTU_FB, FL_TLS_MTU_FB and FL_SCTP_MTU_FB -
-  *                       fallback to the corresp. proto if the built 
-  *                       message > mtu and send_info->proto==PROTO_UDP. 
+  *                       fallback to the corresp. proto if the built
+  *                       message > mtu and send_info->proto==PROTO_UDP.
   *                       It will also update send_info->proto.
   *                     - FL_FORCE_RPORT: add rport to via
   * @param mode - flags for building the message, can be a combination of:
   *                 * BUILD_NO_LOCAL_VIA - don't add a local via
   *                 * BUILD_NO_VIA1_UPDATE - don't update first via (rport,
   *                    received a.s.o)
-  *                 * BUILD_NO_PATH - don't add a Route: header with the 
+  *                 * BUILD_NO_PATH - don't add a Route: header with the
   *                   msg->path_vec content.
   *                 * BUILD_IN_SHM - build the result in shm memory
   *
@@ -1988,13 +1988,16 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 		LM_ERR("Error while adjusting Content-Length\n");
 		goto error00;
 	}
+	LM_ERR("111\n");
 
 	if(unlikely(mode&BUILD_NO_LOCAL_VIA))
 		goto after_local_via;
+		LM_ERR("222\n");
 
 	/* create the via header */
 	branch.s=msg->add_to_branch_s;
 	branch.len=msg->add_to_branch_len;
+	LM_ERR("333\n");
 
 	via_anchor=anchor_lump(msg, msg->via1->hdr.s-buf, 0, HDR_VIA_T);
 	if (unlikely(via_anchor==0)) goto error00;
@@ -2003,6 +2006,8 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 		LM_ERR("could not create Via header\n");
 		goto error00;
 	}
+	LM_ERR("444\n");
+
 after_local_via:
 	if(unlikely(mode&BUILD_NO_VIA1_UPDATE))
 		goto after_update_via1;
@@ -2013,6 +2018,7 @@ after_local_via:
 			goto error00;  /* free also line_buf */
 		}
 	}
+	LM_ERR("5555\n");
 
 	/* check if rport needs to be updated:
 	 *  - if FL_FORCE_RPORT is set add it (and del. any previous version)
@@ -2026,6 +2032,7 @@ after_local_via:
 			goto error00; /* free everything */
 		}
 	}
+	LM_ERR("666\n");
 
 	/* find out where the offset of the first parameter that should be added
 	 * (after host:port), needed by add receive & maybe rport */
@@ -2043,6 +2050,8 @@ after_local_via:
 			if(send_sock->address.af==AF_INET6) size+=1; /* +1 for ']'*/
 #endif
 	}
+	LM_ERR("7777\n");
+
 	/* if received needs to be added, add anchor after host and add it, or
 	 * overwrite the previous one if already present */
 	if (received_buf){
@@ -2079,6 +2088,7 @@ after_local_via:
 		}
 		rport_buf = NULL;
 	}
+	LM_ERR("8888888\n");
 
 after_update_via1:
 	/* add route with path content */
@@ -2121,6 +2131,8 @@ after_update_via1:
 		}
 		path_buf.s = NULL;
 	}
+	LM_ERR("999999\n");
+
 	/* compute new msg len and fix overlapping zones*/
 	new_len=len+body_delta+lumps_len(msg, msg->add_rm, send_info)+via_len;
 #ifdef XL_DEBUG
@@ -2167,6 +2179,8 @@ after_update_via1:
 			new_len+=via_len;
 		}
 	}
+	LM_ERR("10\n");
+
 	/* add via header to the list */
 	/* try to add it before msg. 1st via */
 	/* add first via, as an anchor for second via*/
@@ -2194,6 +2208,7 @@ after_update_via1:
 		}
 		goto error00;
 	}
+	LM_ERR("11-11\n");
 
 	offset=s_offset=0;
 	if (msg->new_uri.s){
@@ -2214,6 +2229,7 @@ after_update_via1:
 	/* copy the rest of the message */
 	memcpy(new_buf+offset, buf+s_offset, len-s_offset);
 	new_buf[new_len]=0;
+	LM_ERR("12-12\n");
 
 	/* update the send_info if udp_mtu affected */
 	if (di.proto!=PROTO_NONE) {
@@ -2227,11 +2243,14 @@ after_update_via1:
 		abort();
 	}
 #endif
+LM_ERR("13 \n");
 
 	*returned_len=new_len;
 	return new_buf;
 
 error00:
+LM_ERR("14 \n");
+
 	if (received_buf) pkg_free(received_buf);
 	if (rport_buf) pkg_free(rport_buf);
 	if (path_buf.s) pkg_free(path_buf.s);
@@ -2457,7 +2476,7 @@ char * build_res_buf_from_sip_req( unsigned int code, str *text ,str *new_tag,
 	/* filling the buffer*/
 	p=buf;
 	/* first line */
-	memcpy( p , msg->first_line.u.request.version.s , 
+	memcpy( p , msg->first_line.u.request.version.s ,
 		msg->first_line.u.request.version.len);
 	p += msg->first_line.u.request.version.len;
 	*(p++) = ' ' ;
@@ -2762,7 +2781,7 @@ char* via_builder(unsigned int *len, sip_msg_t *msg,
 			/* continue, we'll just ignore comp */
 	}
 #endif /* USE_COMP */
-			
+
 	via_prefix_len=MY_VIA_LEN+(send_info->proto==PROTO_SCTP);
 	max_len=via_prefix_len +address_str->len /* space in MY_VIA */
 		+2 /* just in case it is a v6 address ... [ ] */
@@ -3179,7 +3198,7 @@ char * build_all( struct sip_msg* msg, int touch_clen,
 	new_buf[offset] = 0;
 
 	*returned_len = offset;
-	return new_buf;	
+	return new_buf;
 }
 
 

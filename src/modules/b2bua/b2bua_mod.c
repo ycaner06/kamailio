@@ -45,12 +45,13 @@
 #include "../../core/config.h"
 #include "../../core/fmsg.h"
 #include "../../core/onsend.h"
-#include "../../core/kemi.h"
 #include "../../core/parser/msg_parser.h"
 #include "../../core/parser/parse_uri.h"
 #include "../../core/parser/parse_to.h"
 #include "../../core/parser/parse_from.h"
 #include "../../core/data_lump.h"
+#include "../../core/char_msg_val.h"
+#include "../../core/mem/shm_mem.h"
 
 #include "../../modules/sanity/api.h"
 #include "../../lib/ims/useful_defs.h"
@@ -71,6 +72,11 @@ int b2b_sanity_checks = 0;
 str b2b_contact_header = str_init("Contact : <sip:b2b@192.168.1.39:5060>\r\n");
 str b2b_contact_uri = str_init("<sip:b2b@192.168.1.39:5060>");
 str b2b_max_fwds_hdr = str_init("Max-Forwards: 10\r\n");
+str b2b_via_prefix = {0, 0};
+str b2b_vparam_prefix = str_init("z9hG4bKsr-");
+str b2b_vparam_name = str_init("branch");
+str b2b_ip = str_init("192.168.1.39");
+str satir_basi = str_init("\r\n");
 
 
 struct tm_binds t_binds;
@@ -96,6 +102,8 @@ int b2b_recollect_contact(sip_msg_t *msg);
 int b2b_recollect_cseq(sip_msg_t *msg , str *cseq);
 int b2b_recollect_from_body(sip_msg_t *msg , str *from_body);
 int b2b_recollect_totag(sip_msg_t *msg , str *totag ,str *to_body);
+int b2b_insert_local_via(sip_msg_t *msg);
+
 
 static param_export_t params[]={
 	{"mask_key",		PARAM_STR, &b2b_mask_key},
@@ -161,6 +169,26 @@ static int mod_init(void)
 		LM_ERR("can't load TM API\n");
 		return -1;
 	}
+
+	/* 'SIP/2.0/UDP ' + ip + ';' + param + '=' + prefix (+ '\0') */
+		b2b_via_prefix.len = 17 + b2b_ip.len + 1 + b2b_vparam_name.len + 1;
+		b2b_via_prefix.s = (char*)pkg_malloc(b2b_via_prefix.len+1);
+		if(b2b_via_prefix.s==NULL)
+		{
+			LM_ERR("via prefix parameter is invalid\n");
+			return -1;
+		}
+
+	/* build via prefix */
+	memcpy(b2b_via_prefix.s, "Via: SIP/2.0/UDP ", 17);
+	memcpy(b2b_via_prefix.s+17, b2b_ip.s, b2b_ip.len);
+	b2b_via_prefix.s[17+b2b_ip.len] = ';';
+	memcpy(b2b_via_prefix.s+17+b2b_ip.len+1, b2b_vparam_name.s,
+			b2b_vparam_name.len);
+	b2b_via_prefix.s[17+b2b_ip.len+1+b2b_vparam_name.len] = '=';
+	b2b_via_prefix.s[b2b_via_prefix.len] = '\0';
+	LM_INFO("VIA prefix: [%s]\n", b2b_via_prefix.s);
+
 
 	sr_event_register_cb(SREV_NET_DATA_IN,  b2b_msg_received);
 
@@ -425,6 +453,8 @@ static int b2b_msg_received(sr_event_param_t *evp)
 			b2b_recollect_totag(&msg , &to_header->tag_value , &dep->to_body);
 
 
+			b2b_insert_local_via(&msg);
+
 			nbuf = b2b_msg_update(&msg, (unsigned int*)&obuf->len);
 
 			if(nbuf){
@@ -436,9 +466,10 @@ static int b2b_msg_received(sr_event_param_t *evp)
 				LM_ERR("new buffer overflow (%d)\n", obuf->len);
 				return -1;
 			}
-			memcpy(obuf->s, nbuf, obuf->len);
-			obuf->s[obuf->len] = '\0';
-
+			if(nbuf){
+				memcpy(obuf->s, nbuf, obuf->len);
+				obuf->s[obuf->len] = '\0';
+		  }
 		}
 return 1;
 }
@@ -451,9 +482,55 @@ char* b2b_msg_update(sip_msg_t *msg, unsigned int *olen)
 	init_dest_info(&dst);
 	dst.proto = PROTO_UDP;
 	return build_req_buf_from_sip_req(msg,
-			olen, &dst, BUILD_NO_PATH|BUILD_NO_LOCAL_VIA|BUILD_NO_VIA1_UPDATE);
+			olen, &dst, BUILD_NO_LOCAL_VIA|BUILD_NO_VIA1_UPDATE);
 }
 
+int b2b_insert_local_via(sip_msg_t *msg){
+
+	char md5[MD5_LEN];
+	struct lump* l;
+	str temp_via={0,0};
+
+
+	if (!char_msg_val( msg, md5 )) 	{ /* parses transaction key */
+		LM_ERR("char_msg_val failed\n");
+		return -1;
+	}
+
+	msg->hash_index=hash( msg->callid->body, get_cseq(msg)->number);
+	if (!branch_builder( msg->hash_index, 0, md5, 0 /* 0-th branch */,
+				msg->add_to_branch_s, &msg->add_to_branch_len )) {
+		LM_ERR("branch_builder failed\n");
+		return -1;
+	}
+  temp_via.s=(char *)pkg_malloc(b2b_via_prefix.len+msg->add_to_branch_len+satir_basi.len);
+
+	memcpy(temp_via.s,b2b_via_prefix.s,b2b_via_prefix.len);
+	memcpy(&temp_via.s[b2b_via_prefix.len],msg->add_to_branch_s,msg->add_to_branch_len);
+	memcpy(&temp_via.s[b2b_via_prefix.len+msg->add_to_branch_len],satir_basi.s,satir_basi.len);
+	temp_via.len=b2b_via_prefix.len+msg->add_to_branch_len+satir_basi.len;
+	LM_INFO("OUR VIA2 [%.*s] \r\n",temp_via.len,temp_via.s);
+
+
+	l = anchor_lump(msg, msg->headers->name.s - msg->buf, 0, HDR_VIA_T);
+	if(l == 0) {
+		LM_ERR("  failed to get anchor\n");
+		return 0;
+	}
+	LM_INFO(" XXXXXXXXX\r\n" );
+
+
+	l = insert_new_lump_before(l, temp_via.s, temp_via.len, HDR_VIA_T);
+	LM_INFO("????? \r\n" );
+
+	if (l==0) {
+		LM_ERR("failed to add before lump\n");
+		return 0;
+	}
+
+
+		return 1;
+}
 
 int b2b_recollect_cseq(sip_msg_t *msg , str *cseq){
 
