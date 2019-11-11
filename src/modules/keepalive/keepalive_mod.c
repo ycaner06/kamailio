@@ -52,19 +52,28 @@ static int ka_mod_add_destination(modparam_t type, void *val);
 int ka_init_rpc(void);
 int ka_alloc_destinations_list();
 extern void ka_check_timer(unsigned int ticks, void *param);
-
+int counter_del = 5;
 static int w_cmd_is_alive(struct sip_msg *msg, char *str1, char *str2);
+
+str ka_ping_from = str_init("sip:keepalive@kamailio.org");
 
 extern struct tm_binds tmb;
 
 int ka_ping_interval = 30;
 ka_destinations_list_t *ka_destinations_list = NULL;
 
+static int fixup_add_destination(void** param, int param_no);
+static int add_destination_f(sip_msg_t *msg, char *uri, char *owner);
+static int del_destination_f(sip_msg_t *msg, char *uri, char *owner);
 
 static cmd_export_t cmds[] = {
 	{"is_alive", (cmd_function)w_cmd_is_alive, 1,
 			fixup_spve_null, 0, ANY_ROUTE},
 	// internal API
+	{"add_destination", (cmd_function)add_destination_f, 2,
+		fixup_add_destination, 0, REQUEST_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
+	{"del_destination", (cmd_function)del_destination_f, 2,
+		fixup_add_destination, 0, REQUEST_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
 	{"bind_keepalive", (cmd_function)bind_keepalive, 0, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0}
 };
@@ -74,6 +83,7 @@ static param_export_t params[] = {
 	{"ping_interval", PARAM_INT, &ka_ping_interval},
 	{"destination", PARAM_STRING | USE_FUNC_PARAM,
 				(void *)ka_mod_add_destination},
+	{"ping_from", PARAM_STRING,	&ka_ping_from},
 	{0, 0, 0}
 };
 
@@ -126,6 +136,8 @@ static int mod_init(void)
  */
 static void mod_destroy(void)
 {
+	lock_release(ka_destinations_list->lock);
+	lock_dealloc(ka_destinations_list->lock);
 }
 
 
@@ -138,6 +150,53 @@ int ka_parse_flags(char *flag_str, int flag_len)
 	return 0;
 }
 
+
+static int fixup_add_destination(void** param, int param_no)
+{
+	if (param_no == 1 || param_no == 2) {
+		return fixup_spve_all(param, param_no);
+	}
+
+	return 0;
+}
+
+static int add_destination_f(sip_msg_t *msg, char *uri, char *owner)
+{
+	str suri ={0,0};
+	str sowner={0,0};
+	if(fixup_get_svalue(msg, (gparam_t*)uri, &suri)!=0) {
+		LM_ERR("unable to get uri string\n");
+		return -1;
+	}
+	if(fixup_get_svalue(msg, (gparam_t*)owner, &sowner)!=0) {
+		LM_ERR("unable to get owner regex\n");
+		return -1;
+	}
+
+	if(suri.len<4){
+		LM_ERR("Uri Len must be valid\n");
+		return -1;
+	}
+
+
+	return ka_add_dest(&suri, &sowner, 0, 0, 0);
+}
+
+static int del_destination_f(sip_msg_t *msg, char *uri, char *owner)
+{
+	str suri ={0,0};
+	str sowner={0,0};
+	if(fixup_get_svalue(msg, (gparam_t*)uri, &suri)!=0) {
+		LM_ERR("unable to get uri string\n");
+		return -1;
+	}
+	if(fixup_get_svalue(msg, (gparam_t*)owner, &sowner)!=0) {
+		LM_ERR("unable to get owner regex\n");
+		return -1;
+	}
+
+	return ka_del_destination(&suri, &sowner);
+}
 
 /*
  * Function callback executer per module param "destination".
@@ -174,6 +233,11 @@ int ka_alloc_destinations_list()
 		return -1;
 	}
 
+	ka_destinations_list->lock = lock_alloc();
+	if(!ka_destinations_list->lock) {
+		LM_ERR("Couldnt allocate Lock \n");
+		return -1;
+	}
 	return 0;
 }
 

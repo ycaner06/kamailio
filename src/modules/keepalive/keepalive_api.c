@@ -53,6 +53,7 @@ int bind_keepalive(keepalive_api_t *api)
 
 	api->add_destination = ka_add_dest;
 	api->destination_state = ka_destination_state;
+	api->del_destination = ka_del_destination;
 	return 0;
 }
 
@@ -63,9 +64,14 @@ int ka_add_dest(str *uri, str *owner, int flags, ka_statechanged_f callback,
 		void *user_attr)
 {
 	struct sip_uri _uri;
-	ka_dest_t *dest;
+	ka_dest_t *dest=0;
 
 	LM_INFO("adding destination: %.*s\n", uri->len, uri->s);
+
+	if(ka_find_destination(uri , owner , &dest , &dest)){
+		LM_WARN("uri [%.*s] already in stack --ignoring \r\n",uri->len, uri->s);
+		return -1;
+	}
 
 	dest = (ka_dest_t *)shm_malloc(sizeof(ka_dest_t));
 	if(dest == NULL) {
@@ -141,4 +147,73 @@ ka_state ka_destination_state(str *destination)
 	}
 
 	return ka_dest->state;
+}
+
+int ka_del_destination(str *uri, str *owner){
+
+	ka_dest_t *target=0,*head=0;
+
+	if(!ka_find_destination(uri,owner,&target,&head)){
+		LM_ERR("Couldnt find destination \r\n");
+		return -1;
+	}
+
+	if(!target){
+		LM_ERR("Couldnt find destination \r\n");
+		return -1;
+	}
+
+	lock_get(ka_destinations_list->lock);
+
+	if(!head){
+		LM_INFO("There isnt any head so maybe it is first \r\n");
+		ka_destinations_list->first = target->next;
+		free_destination(target);
+		lock_release(ka_destinations_list->lock);
+		return 1;
+	}
+	head->next = target->next;
+	free_destination(target);
+	lock_release(ka_destinations_list->lock);
+
+	return 1;
+}
+
+int ka_find_destination(str *uri, str *owner, ka_dest_t **target,ka_dest_t **head){
+
+	ka_dest_t  *dest=0 ,*temp=0;
+
+	lock_get(ka_destinations_list->lock);
+	for(dest = ka_destinations_list->first ;dest; temp=dest, dest= dest->next ){
+		if(!dest)
+			break;
+
+		if(uri->len!=dest->uri.len)
+			continue;
+
+		if(memcmp(dest->uri.s , uri->s , uri->len>dest->uri.len?dest->uri.len : uri->len)==0){
+			*target = dest;
+			*head = temp;
+			LM_DBG("destination is found [target : %p] [head : %p] \r\n",target,temp);
+			lock_release(ka_destinations_list->lock);
+			return 1;
+		}
+	}
+	lock_release(ka_destinations_list->lock);
+
+	return 0;
+
+}
+
+int free_destination(ka_dest_t *dest){
+
+	if(dest)
+		if(dest->uri.s)
+			shm_free(dest->uri.s);
+		if(dest->owner.s)
+			shm_free(dest->owner.s);
+		shm_free(dest);
+
+
+	return 1;
 }
