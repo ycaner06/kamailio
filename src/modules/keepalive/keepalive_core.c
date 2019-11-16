@@ -125,7 +125,6 @@ static void ka_options_callback(
 		state = KA_STATE_DOWN;
 		ka_dest->last_up = time(NULL);
 		ka_dest->counter++;
-
 	}
 
 	LM_DBG("new state is: %d\n", state);

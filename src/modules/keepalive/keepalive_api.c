@@ -66,11 +66,12 @@ int ka_add_dest(str *uri, str *owner, int flags, ka_statechanged_f callback,
 	struct sip_uri _uri;
 	ka_dest_t *dest=0;
 
-	LM_INFO("adding destination: %.*s\n", uri->len, uri->s);
+	LM_DBG("adding destination: %.*s\n", uri->len, uri->s);
 
 	if(ka_find_destination(uri , owner , &dest , &dest)){
-		LM_WARN("uri [%.*s] already in stack --ignoring \r\n",uri->len, uri->s);
-		return -1;
+		LM_INFO("uri [%.*s] already in stack --ignoring \r\n",uri->len, uri->s);
+		dest->counter=0;
+		return -2;
 	}
 
 	dest = (ka_dest_t *)shm_malloc(sizeof(ka_dest_t));
@@ -117,15 +118,6 @@ err:
 	}
 	return -1;
 }
-
-/*
- * TODO
- */
-int ka_rm_dest()
-{
-	return -1;
-}
-
 /*
  *
  */
@@ -148,7 +140,16 @@ ka_state ka_destination_state(str *destination)
 
 	return ka_dest->state;
 }
-
+/*!
+* @function ka_del_destination
+* @abstract deletes given sip uri in allocated destination stack as named ka_alloc_destinations_list
+*
+* @param msg sip message
+* @param uri given uri
+* @param owner given owner name, not using now
+*	*
+* @result 1 successful  , -1 fail
+*/
 int ka_del_destination(str *uri, str *owner){
 
 	ka_dest_t *target=0,*head=0;
@@ -166,7 +167,7 @@ int ka_del_destination(str *uri, str *owner){
 	lock_get(ka_destinations_list->lock);
 
 	if(!head){
-		LM_INFO("There isnt any head so maybe it is first \r\n");
+		LM_DBG("There isnt any head so maybe it is first \r\n");
 		ka_destinations_list->first = target->next;
 		free_destination(target);
 		lock_release(ka_destinations_list->lock);
@@ -178,8 +179,18 @@ int ka_del_destination(str *uri, str *owner){
 
 	return 1;
 }
-
-int ka_find_destination(str *uri, str *owner, ka_dest_t **target,ka_dest_t **head){
+/*!
+* @function ka_find_destination
+* @abstract find given destination uri address in destination_list stack
+*
+* @param *uri given uri
+* @param *owner given owner name, not using now
+* @param **target searched address in stack
+* @param **head which points target
+*	*
+* @result 1 successful  , -1 fail
+*/
+int ka_find_destination(str *uri, str *owner, ka_dest_t **target, ka_dest_t **head){
 
 	ka_dest_t  *dest=0 ,*temp=0;
 
@@ -204,16 +215,25 @@ int ka_find_destination(str *uri, str *owner, ka_dest_t **target,ka_dest_t **hea
 	return 0;
 
 }
+/*!
+* @function free_destination
+* @abstract free ka_dest_t members
+*
+* @param *dest which is freed
 
+* @result 1 successful  , -1 fail
+*/
 int free_destination(ka_dest_t *dest){
 
-	if(dest)
+	if(dest){
 		if(dest->uri.s)
 			shm_free(dest->uri.s);
+
 		if(dest->owner.s)
 			shm_free(dest->owner.s);
-		shm_free(dest);
 
+		shm_free(dest);
+	}
 
 	return 1;
 }

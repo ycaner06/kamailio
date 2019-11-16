@@ -60,7 +60,6 @@ typedef struct _ka_dest
 
 	void *user_attr;
 	ka_statechanged_f statechanged_clb;
-	unsigned int aorhash;
 	struct socket_info *sock;
 	struct ip_addr ip_address; /*!< IP-Address of the entry */
 	unsigned short int port;   /*!< Port of the URI */
@@ -75,6 +74,7 @@ typedef struct _ka_destinations_list
 } ka_destinations_list_t;
 
 extern ka_destinations_list_t *ka_destinations_list;
+extern int counter_del;
 
 int ka_add_dest(str *uri, str *owner, int flags, ka_statechanged_f callback,
 		void *user_attr);
@@ -82,7 +82,6 @@ int ka_destination_state(str *uri);
 int ka_str_copy(str *src, str *dest, char *prefix);
 int free_destination(ka_dest_t *dest) ;
 int ka_del_destination(str *uri, str *owner) ;
-extern int counter_del;
 int ka_find_destination(str *uri, str *owner, ka_dest_t **target ,ka_dest_t **head);
 
 #endif

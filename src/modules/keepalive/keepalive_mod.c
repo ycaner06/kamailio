@@ -52,28 +52,29 @@ static int ka_mod_add_destination(modparam_t type, void *val);
 int ka_init_rpc(void);
 int ka_alloc_destinations_list();
 extern void ka_check_timer(unsigned int ticks, void *param);
-int counter_del = 5;
 static int w_cmd_is_alive(struct sip_msg *msg, char *str1, char *str2);
+static int fixup_add_destination(void** param, int param_no);
+static int w_add_destination(sip_msg_t *msg, char *uri, char *owner);
+static int w_del_destination(sip_msg_t *msg, char *uri, char *owner);
 
-str ka_ping_from = str_init("sip:keepalive@kamailio.org");
 
 extern struct tm_binds tmb;
 
 int ka_ping_interval = 30;
 ka_destinations_list_t *ka_destinations_list = NULL;
+str ka_ping_from = str_init("sip:keepalive@kamailio.org");
+int counter_del = 5;
 
-static int fixup_add_destination(void** param, int param_no);
-static int add_destination_f(sip_msg_t *msg, char *uri, char *owner);
-static int del_destination_f(sip_msg_t *msg, char *uri, char *owner);
+
 
 static cmd_export_t cmds[] = {
 	{"is_alive", (cmd_function)w_cmd_is_alive, 1,
 			fixup_spve_null, 0, ANY_ROUTE},
 	// internal API
-	{"add_destination", (cmd_function)add_destination_f, 2,
+	{"add_destination", (cmd_function)w_add_destination, 2,
 		fixup_add_destination, 0, REQUEST_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
-	{"del_destination", (cmd_function)del_destination_f, 2,
-		fixup_add_destination, 0, REQUEST_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
+	{"del_destination", (cmd_function)w_del_destination, 2,
+		fixup_add_destination, 0, ANY_ROUTE},
 	{"bind_keepalive", (cmd_function)bind_keepalive, 0, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0}
 };
@@ -84,6 +85,7 @@ static param_export_t params[] = {
 	{"destination", PARAM_STRING | USE_FUNC_PARAM,
 				(void *)ka_mod_add_destination},
 	{"ping_from", PARAM_STRING,	&ka_ping_from},
+	{"delete_counter", PARAM_INT,	&counter_del},
 	{0, 0, 0}
 };
 
@@ -159,8 +161,17 @@ static int fixup_add_destination(void** param, int param_no)
 
 	return 0;
 }
-
-static int add_destination_f(sip_msg_t *msg, char *uri, char *owner)
+/*!
+* @function w_add_destination
+* @abstract adds given sip uri in allocated destination stack as named ka_alloc_destinations_list
+* wrapper for ka_add_dest
+* @param msg sip message
+* @param uri given uri
+* @param owner given owner name
+*
+* @result 1 successful  , -1 fail
+*/
+static int w_add_destination(sip_msg_t *msg, char *uri, char *owner)
 {
 	str suri ={0,0};
 	str sowner={0,0};
@@ -173,16 +184,19 @@ static int add_destination_f(sip_msg_t *msg, char *uri, char *owner)
 		return -1;
 	}
 
-	if(suri.len<4){
-		LM_ERR("Uri Len must be valid\n");
-		return -1;
-	}
-
-
 	return ka_add_dest(&suri, &sowner, 0, 0, 0);
 }
-
-static int del_destination_f(sip_msg_t *msg, char *uri, char *owner)
+/*!
+* @function w_del_destination_f
+* @abstract deletes given sip uri in allocated destination stack as named ka_alloc_destinations_list
+* wrapper for ka_del_destination
+* @param msg sip message
+* @param uri given uri
+* @param owner given owner name, not using now
+*
+* @result 1 successful  , -1 fail
+*/
+static int w_del_destination(sip_msg_t *msg, char *uri, char *owner)
 {
 	str suri ={0,0};
 	str sowner={0,0};
@@ -273,7 +287,16 @@ static sr_kemi_t sr_kemi_keepalive_exports[] = {
 		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
-
+	{ str_init("keepalive"), str_init("add_destination"),
+		SR_KEMIP_INT, ka_add_dest,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("keepalive"), str_init("del_destination"),
+		SR_KEMIP_INT, ka_del_destination,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
 };
 /* clang-format on */
